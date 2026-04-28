@@ -1,0 +1,5 @@
+
+config adguardhome 'config'
+	option enabled '1'
+	option dns_enabled '1'
+

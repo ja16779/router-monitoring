@@ -1,0 +1,32 @@
+# netdoc-ai — Python dependencies
+# Install with: pip install -r requirements.txt
+
+# ── Web framework ─────────────────────────────────────────────────────────────
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.9
+
+# ── HTTP client (Ollama API) ──────────────────────────────────────────────────
+httpx==0.27.2
+
+# ── SSH automation ────────────────────────────────────────────────────────────
+paramiko==3.5.0
+
+# ── Data validation ───────────────────────────────────────────────────────────
+pydantic==2.9.2
+pydantic-settings==2.6.1
+
+# ── Markdown rendering ────────────────────────────────────────────────────────
+markdown==3.7
+
+# ── PDF generation (optional — install separately if needed) ──────────────────
+# weasyprint==62.3
+# Fonts for weasyprint on Windows:
+# pip install weasyprint
+# Then test: python -c "from weasyprint import HTML; print('PDF OK')"
+
+# ── Environment config ────────────────────────────────────────────────────────
+python-dotenv==1.0.1
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
+cryptography==43.0.3   # paramiko dependency — pinned for security

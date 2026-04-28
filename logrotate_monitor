@@ -1,0 +1,25 @@
+/var/log/monitor_realtime.log
+/var/log/monitor_hourly.log
+/var/log/monitor_daily.log
+/var/log/monitor_weekly.log
+{
+    # Rotación: máximo 7 archivos de 1MB cada uno
+    size 1M
+    rotate 7
+
+    # Comprimir archivos viejos
+    compress
+    delaycompress
+
+    # No quejarse si archivo no existe
+    missingok
+
+    # No rotar si archivo está vacío
+    notifempty
+
+    # Crear nuevo archivo vacío tras rotación
+    create 0640 root root
+
+    # No enviar email de notificación
+    nomail
+}

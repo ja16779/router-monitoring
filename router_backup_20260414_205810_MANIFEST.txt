@@ -1,0 +1,22 @@
+ROUTER BACKUP MANIFEST
+======================================================================
+
+Timestamp: 20260414_205810
+Router: Flint-2 (192.168.10.1)
+OpenWrt: 25.12.2
+
+Contenido del respaldo:
+----------------------------------------------------------------------
+drwx------    3 root     root         180 Apr 14 20:58 adguardhome
+drwxr-xr-x    2 root     root         740 Apr 14 20:58 config
+-rw-------    1 root     root          90 Apr 14 20:58 dnsmasq.conf
+-rw-r--r--    1 root     root       33.9K Apr 14 20:58 installed_packages.txt
+-rwx--x--x    1 root     root        1.4K Apr 14 20:58 monitor_config.sh
+-rw-r--r--    1 root     root       39.4K Apr 14 20:58 uci_dump.txt
+
+----------------------------------------------------------------------
+
+Para restaurar:
+1. tar -xzf router_backup_TIMESTAMP.tar.gz
+2. scp -r router_backup_TIMESTAMP/* root@192.168.10.1:/etc/
+3. Reiniciar router

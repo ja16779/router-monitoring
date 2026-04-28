@@ -1,0 +1,23 @@
+#!/bin/sh
+
+leases_file="/tmp/dhcp.leases"
+leases_cache="/tmp/dhcp.leases.cache"
+
+# Sincronizar leases con router secundario si sshpass disponible
+if command -v sshpass >/dev/null 2>&1; then
+    if ! cmp -s "$leases_file" "$leases_cache"; then
+        logger -p local0.info -t dhcp-sync "Sincronizando $leases_file con router secundario..."
+
+        sshpass -p admin scp -q -o StrictHostKeyChecking=no \
+            /tmp/dhcp.leases root@192.168.10.2:/tmp/dhcp.leases
+
+        if [ $? -eq 0 ]; then
+            logger -p local0.info -t dhcp-sync "Sincronizacion exitosa"
+            cp "$leases_file" "$leases_cache"
+        else
+            logger -p local0.info -t dhcp-sync "Error en sincronizacion SCP"
+        fi
+    else
+        logger -p local0.info -t dhcp-sync "Sin cambios en leases, omitiendo sincronizacion"
+    fi
+fi

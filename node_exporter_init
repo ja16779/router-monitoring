@@ -1,0 +1,43 @@
+#!/bin/sh /etc/rc.common
+
+START=99
+STOP=10
+
+PIDFILE=/tmp/node_exporter.pid
+
+start() {
+    if [ -f "$PIDFILE" ] && kill -0 "$(cat $PIDFILE)" 2>/dev/null; then
+        echo "already running (PID $(cat $PIDFILE))"
+        return
+    fi
+    /mnt/usb/node_exporter \
+        --web.listen-address=0.0.0.0:9100 \
+        --collector.disable-defaults \
+        --collector.cpu \
+        --collector.meminfo \
+        --collector.loadavg \
+        --collector.netdev \
+        --collector.thermal_zone \
+        --collector.filesystem \
+        --collector.time \
+        --collector.uname \
+        --collector.textfile \
+        --collector.textfile.directory=/tmp/prom-metrics \
+        >> /tmp/node_exporter.log 2>&1 &
+    echo $! > "$PIDFILE"
+    echo "node_exporter started PID $(cat $PIDFILE)"
+}
+
+stop() {
+    if [ -f "$PIDFILE" ]; then
+        kill "$(cat $PIDFILE)" 2>/dev/null
+        rm -f "$PIDFILE"
+    fi
+    killall node_exporter 2>/dev/null
+}
+
+restart() {
+    stop
+    sleep 1
+    start
+}

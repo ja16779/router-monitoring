@@ -1,0 +1,92 @@
+#!/bin/sh
+#TOKEN="REDACTED_BOT_TOKEN"
+#TOKEN="REDACTED_BOT_TOKEN"
+#ID="716542586"
+#URL="https://api.telegram.org/bot$TOKEN/sendMessage"
+send_to_telegram() {
+    logger -p local0.info -t dhcp-join-notify "$1"
+    #token="REDACTED_BOT_TOKEN"
+    #token="REDACTED_BOT_TOKEN"
+    token="REDACTED_BOT_TOKEN"
+    chat_id="716542586"
+    if [[ -n "${token}" ]] && [[ -n "${chat_id}" ]]; then
+        curl -skim 10 --data disable_notification="false" --data parse_mode="MarkdownV2" --data chat_id="$chat_id" --data-urlencode "text=$1" "https://api.telegram.org/bot${token}/sendMessage" > /dev/null
+    else
+        logger -p local0.info -t dhcp-join-notify "Error: Your telegram chat_id or token is empty"
+    fi
+}
+
+
+
+#act=$ACTION
+
+#MENSAJE=$act
+#curl -s -X POST $URL -d chat_id=$ID -d text="$MENSAJE"
+
+
+if [ "$ACTION" == "add" ]; then
+    (
+        #datetime=$(date '+%Y-%m-%d__%H:%M:%S')
+        datetime=$(date "+%A %d-%b-%Y %T")
+        [[ -z "${HOSTNAME}" ]] && HOSTNAME="NOHOSTNAME"
+        mac=$(echo $MACADDR | awk '{ print toupper($0) }')
+        MENSAJE=$(echo "A new DHCP lease has been assigned: $datetime MAC=$mac, IP=$IPADDR, NAME=$HOSTNAME")
+        sshpass -p admin scp /tmp/dhcp.leases 192.168.8.2:/tmp/
+#       curl -s -X POST $URL -d chat_id=$ID -d text="$(uname -n):$MENSAJE"
+        send_to_telegram "\#$(echo "${HOSTNAME}" | sed 's/[^a-zA-Z0-9]//g') New DHCP lease has been assigned \#${device_name}:
+\`\`\`
+Time: $(date "+%A %d-%b-%Y %T")
+Hostname: ${HOSTNAME}
+IP Address: ${IPADDR}
+MAC Address: ${mac}
+\`\`\`"
+    )
+    echo $MENSAJE >> /tmp/dhcpmasq.log
+        #datetime=$(date '+%Y-%m-%d__%H:%M:%S')
+        datetime=$(date "+%A %d-%b-%Y %T")
+        echo date=$datetime, mac=$MACADDR, ip=$IPADDR, device=$HOSTNAME > /tmp/new_device.out
+#        /tmp/fping.sh
+        sshpass -p admin scp /tmp/dhcp.leases 192.168.8.2:/tmp/
+else
+
+if [ "$ACTION" == "update" ]; then
+
+    #datetime=$(date '+%Y-%m-%d__%H:%M:%S')
+     datetime=$(date "+%A %d-%b-%Y %T")
+    mac=$(echo $MACADDR | awk '{ print toupper($0) }')
+    [[ -z "${HOSTNAME}" ]] && HOSTNAME="NOHOSTNAME"
+    MENSAJE=$(echo "An updated DHCP lease has been assigned: $datetime MAC=$mac, IP=$IPADDR, NAME=$HOSTNAME")
+    sshpass -p admin scp /tmp/dhcp.leases 192.168.8.2:/tmp/
+#    curl -s -X POST $URL -d chat_id=$ID -d text="$(uname -n:)$MENSAJE"
+#    send_to_telegram "\#$(echo "${HOSTNAME}" | sed 's/[^a-zA-Z0-9]//g') DHCP lease has been updated \#${device_name}:
+#\`\`\`
+#Time: $(date "+%A %d-%b-%Y %T")
+#Hostname: ${HOSTNAME}
+#IP Address: ${IPADDR}
+#MAC Address: ${mac}
+#\`\`\`"
+    echo $MENSAJE >> /tmp/dhcpmasq.log
+else
+
+if [ "$ACTION" == "remove" ]; then
+
+   #datetime=$(date '+%Y-%m-%d__%H:%M:%S')
+    datetime=$(date "+%A %d-%b-%Y %T")
+   mac=$(echo $MACADDR | awk '{ print toupper($0) }')
+   [[ -z "${HOSTNAME}" ]] && HOSTNAME="NOHOSTNAME"
+   MENSAJE=$(echo "$datetime leased finished on MAC=$mac, IP=$IPADDR, NAME=$HOSTNAME")
+   sshpass -p admin scp /tmp/dhcp.leases 192.168.8.2:/tmp
+   echo $MENSAJE >> /tmp/dhcpmasq.log
+   send_to_telegram "\#$(echo "${HOSTNAME}" | sed 's/[^a-zA-Z0-9]//g') DHCP lease has been removed \#${device_name}:
+\`\`\`
+Time: $(date "+%A %d-%b-%Y %T")
+Hostname: ${HOSTNAME}
+IP Address: ${IPADDR}
+MAC Address: ${mac}
+\`\`\`"
+  #curl -s -X POST $URL -d chat_id=$ID -d text="$(uname -n):$MENSAJE"
+ #  /etc/script/fping.sh
+
+fi
+fi
+fi

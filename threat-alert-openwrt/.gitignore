@@ -1,0 +1,28 @@
+# Configuration files (contain sensitive data)
+/config.sh
+/etc/
+
+# Logs
+*.log
+/logs/
+/var/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+.DS_Store
+
+# Feeds (generated)
+/feeds/
+*.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Backup
+*.backup

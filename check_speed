@@ -1,0 +1,148 @@
+#!/bin/sh /etc/rc.common
+
+# Script de monitoreo de velocidad para enlaces WAN
+START=99
+STOP=10
+SERVICE_NAME="CheckSpeed"
+PIDFILE="/var/run/check_speed.pid"
+
+# Configuracion Telegram
+TELEGRAM_TOKEN="REDACTED_BOT_TOKEN"
+TELEGRAM_CHAT_ID="716542586"
+
+# Configuracion de enlaces
+# Enlace 1: eth1 - 250 Mbps simetrico
+WAN1_IFACE="eth1"
+WAN1_NAME="WAN Principal"
+WAN1_THRESHOLD_DOWN=230
+WAN1_THRESHOLD_UP=230
+WAN1_SERVER="46842"
+
+# Enlace 2: lan5 - 110 Mbps simetrico
+WAN2_IFACE="lan5"
+WAN2_NAME="WAN Secundario"
+WAN2_THRESHOLD_DOWN=100
+WAN2_THRESHOLD_UP=100
+WAN2_SERVER="46842"
+
+# Intervalo entre pruebas (segundos)
+CHECK_INTERVAL=3600
+
+# Enviar alerta a Telegram
+send_alert() {
+    local message="$1"
+
+    curl -skim 10 \
+        --data disable_notification="false" \
+        --data parse_mode="HTML" \
+        --data chat_id="$TELEGRAM_CHAT_ID" \
+        --data-urlencode "text=$message" \
+        "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" >/dev/null 2>&1
+}
+
+# Realizar speedtest en una interfaz
+run_speedtest() {
+    local iface="$1"
+    local server="$2"
+
+    # Ejecutar speedtest con interfaz especifica
+    local result
+    result="$(/etc/script/speedtest -s "$server" -I "$iface" 2>/dev/null)"
+
+    local download upload
+    download="$(echo "$result" | grep 'Download' | awk '{print $2}')"
+    upload="$(echo "$result" | grep 'Upload' | awk '{print $2}')"
+
+    echo "${download:-0}:${upload:-0}"
+}
+
+# Verificar velocidad de un enlace
+check_link() {
+    local name="$1"
+    local iface="$2"
+    local threshold_down="$3"
+    local threshold_up="$4"
+    local server="$5"
+
+    local result download upload
+    result="$(run_speedtest "$iface" "$server")"
+    download="${result%:*}"
+    upload="${result#*:}"
+
+    # Validar resultados
+    if [ "$download" = "0" ] || [ -z "$download" ]; then
+        logger -t check_speed "ERROR: No se pudo probar $name ($iface)"
+        return 1
+    fi
+
+    local alert_msg=""
+    local timestamp="$(date '+%A %d-%b-%Y %T')"
+
+    # Convertir a entero para comparacion
+    local down_int=$(echo "$download" | cut -d. -f1)
+    local up_int=$(echo "$upload" | cut -d. -f1)
+
+    # Verificar download
+    if [ "$down_int" -lt "$threshold_down" ]; then
+        alert_msg="Download bajo"
+    fi
+
+    # Verificar upload
+    if [ "$up_int" -lt "$threshold_up" ]; then
+        [ -n "$alert_msg" ] && alert_msg="$alert_msg + Upload bajo" || alert_msg="Upload bajo"
+    fi
+
+    # Log resultado
+    logger -t check_speed "$name: Down=${download}Mbps Up=${upload}Mbps"
+
+    # Enviar alerta si hay problema
+    if [ -n "$alert_msg" ]; then
+        send_alert "<b>Alerta Velocidad - ${name}</b>
+<pre>
+Router: $(uname -n)
+Enlace: $name ($iface)
+Time: $timestamp
+Download: ${download} Mbps (min: ${threshold_down})
+Upload: ${upload} Mbps (min: ${threshold_up})
+Problema: $alert_msg
+</pre>"
+    fi
+}
+
+start() {
+    echo "Starting ${SERVICE_NAME}..."
+
+    (
+        while true; do
+            # Verificar enlace 1 (eth1 - 250 Mbps)
+            check_link "$WAN1_NAME" "$WAN1_IFACE" "$WAN1_THRESHOLD_DOWN" "$WAN1_THRESHOLD_UP" "$WAN1_SERVER"
+
+            sleep 120
+
+            # Verificar enlace 2 (lan5 - 110 Mbps)
+            check_link "$WAN2_NAME" "$WAN2_IFACE" "$WAN2_THRESHOLD_DOWN" "$WAN2_THRESHOLD_UP" "$WAN2_SERVER"
+
+            # Esperar hasta la siguiente ronda
+            sleep $CHECK_INTERVAL
+        done
+    ) &
+
+    echo $! > "$PIDFILE"
+    echo "${SERVICE_NAME} started with PID $(cat $PIDFILE)"
+}
+
+stop() {
+    echo "Stopping ${SERVICE_NAME}..."
+    if [ -f "$PIDFILE" ]; then
+        kill "$(cat $PIDFILE)" 2>/dev/null
+        rm -f "$PIDFILE"
+    fi
+    # Matar procesos huerfanos
+    pkill -f "check_speed" 2>/dev/null
+}
+
+restart() {
+    stop
+    sleep 2
+    start
+}

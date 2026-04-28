@@ -1,0 +1,59 @@
+#!/bin/sh /etc/rc.common
+# IRQ affinity and RPS optimization for GL-MT6000 (MT7986, 4x Cortex-A53)
+#
+# CPU0 = system/general
+# CPU1 = ethernet LAN  (IRQ 120)
+# CPU2 = ethernet WAN  (IRQ 121)
+# CPU3 = WiFi mt7915e  (IRQ 133)
+
+START=99
+STOP=10
+
+set_irq_affinity() {
+    local irq=$1
+    local mask=$2
+    local name=$3
+    [ -f /proc/irq/$irq/smp_affinity ] || return
+    echo $mask > /proc/irq/$irq/smp_affinity
+    logger -t irq-affinity "IRQ $irq ($name) -> CPU mask $mask"
+}
+
+set_rps() {
+    local iface=$1
+    local mask=$2
+    local f="/sys/class/net/$iface/queues/rx-0/rps_cpus"
+    [ -f "$f" ] || return
+    echo $mask > "$f"
+    logger -t irq-affinity "RPS $iface -> CPU mask $mask"
+}
+
+start() {
+    # Ethernet IRQs - distribute across CPU1 and CPU2
+    set_irq_affinity 120 2 "ethernet-LAN"
+    set_irq_affinity 121 4 "ethernet-WAN"
+
+    # WiFi IRQ - CPU3 (most interrupt-intensive)
+    set_irq_affinity 133 8 "mt7915e-WiFi"
+
+    # RPS for WiFi interfaces -> distribute to CPU1+CPU2+CPU3 (mask 0xe)
+    for iface in wlan0 wlan0-1 wlan0-2 wlan1 wlan1-1; do
+        set_rps $iface e
+    done
+
+    # RPS for bridge VLANs
+    for iface in br-lan br-lan.10 br-lan.8; do
+        set_rps $iface e
+    done
+
+    # Flow hash size for RPS
+    echo 32768 > /proc/sys/net/core/rps_sock_flow_entries
+
+    logger -t irq-affinity "IRQ affinity and RPS optimization applied"
+}
+
+stop() {
+    # Reset to all CPUs
+    for irq in 120 121 133; do
+        [ -f /proc/irq/$irq/smp_affinity ] && echo f > /proc/irq/$irq/smp_affinity
+    done
+}

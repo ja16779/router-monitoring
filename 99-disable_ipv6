@@ -1,0 +1,20 @@
+#!/bin/sh
+# Deshabilitar IPv6 en interfaces si no hay config IPv6 activa
+# Reemplaza logica GL.iNet (glipv6) por verificacion nativa OpenWrt
+
+[ "$ACTION" = "ifup" ] || exit 0
+
+# Solo deshabilitar si la interfaz no tiene proto ipv6/dhcpv6
+PROTO="$(uci -q get network.${INTERFACE}.proto)"
+case "$PROTO" in
+    dhcpv6|6in4|6to4|6rd)
+        # Interfaz IPv6 activa, no deshabilitar
+        exit 0
+        ;;
+esac
+
+# Deshabilitar IPv6 en el dispositivo de esta interfaz
+DEVICE="$(uci -q get network.${INTERFACE}.device)"
+[ -z "$DEVICE" ] && exit 0
+
+sysctl -w net.ipv6.conf."${DEVICE}".disable_ipv6=1 2>/dev/null

@@ -1,0 +1,180 @@
+#!/bin/sh
+# RPCd exec plugin for linkmonitor
+# Provides ubus interface for LuCI frontend
+
+STATE_DIR="/tmp/linkmonitor"
+STATUS_FILE="$STATE_DIR/status.json"
+HISTORY_FILE="$STATE_DIR/history.json"
+PID_FILE="/var/run/linkmonitor.pid"
+CONF="linkmonitor"
+
+case "$1" in
+    list)
+        echo '{
+            "get_status": {},
+            "get_history": { "limit": 50 },
+            "clear_history": {},
+            "get_config_summary": {},
+            "test_link": { "host": "str", "method": "str", "timeout": 5 },
+            "get_daemon_status": {},
+            "restart_daemon": {}
+        }'
+        ;;
+    call)
+        case "$2" in
+            get_status)
+                if [ -f "$STATUS_FILE" ]; then
+                    echo "{\"status\": $(cat "$STATUS_FILE")}"
+                else
+                    echo '{"status": {}}'
+                fi
+                ;;
+
+            get_history)
+                # Read optional limit param from stdin
+                read input
+                limit=$(echo "$input" | jsonfilter -e '@.limit' 2>/dev/null || echo "50")
+
+                if [ -f "$HISTORY_FILE" ]; then
+                    # Return last N entries
+                    local total=$(cat "$HISTORY_FILE" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+                    if [ "$total" -gt "$limit" ] 2>/dev/null; then
+                        cat "$HISTORY_FILE" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+limit = int(sys.argv[1])
+print(json.dumps({'history': data[-limit:], 'total': len(data)}))
+" "$limit" 2>/dev/null || echo "{\"history\": $(cat "$HISTORY_FILE"), \"total\": $total}"
+                    else
+                        echo "{\"history\": $(cat "$HISTORY_FILE"), \"total\": $total}"
+                    fi
+                else
+                    echo '{"history": [], "total": 0}'
+                fi
+                ;;
+
+            clear_history)
+                echo '[]' > "$HISTORY_FILE"
+                echo '{"result": "ok"}'
+                ;;
+
+            get_config_summary)
+                local link_count=0
+                local alert_count=0
+
+                while uci -q get "$CONF.@link[$link_count].host" >/dev/null 2>&1; do
+                    link_count=$((link_count + 1))
+                done
+
+                while uci -q get "$CONF.@alert[$alert_count].type" >/dev/null 2>&1; do
+                    alert_count=$((alert_count + 1))
+                done
+
+                local enabled=$(uci -q get "$CONF.global.enabled" || echo "1")
+                local interval=$(uci -q get "$CONF.global.interval" || echo "30")
+
+                echo "{\"enabled\": $enabled, \"interval\": $interval, \"link_count\": $link_count, \"alert_count\": $alert_count}"
+                ;;
+
+            test_link)
+                read input
+                local host=$(echo "$input" | jsonfilter -e '@.host' 2>/dev/null)
+                local method=$(echo "$input" | jsonfilter -e '@.method' 2>/dev/null || echo "ping")
+                local timeout=$(echo "$input" | jsonfilter -e '@.timeout' 2>/dev/null || echo "5")
+
+                if [ -z "$host" ]; then
+                    echo '{"error": "host parameter required"}'
+                    exit 0
+                fi
+
+                local result=""
+                local state="up"
+                local latency=0
+
+                case "$method" in
+                    ping)
+                        result=$(ping -c 3 -W "$timeout" "$host" 2>/dev/null)
+                        if [ $? -eq 0 ]; then
+                            latency=$(echo "$result" | grep -oE 'avg[^0-9]*([0-9.]+)' | grep -oE '[0-9.]+' | head -1)
+                            [ -z "$latency" ] && latency=$(echo "$result" | grep 'round-trip' | cut -d'/' -f5)
+                            [ -z "$latency" ] && latency="0"
+                            # Also get packet loss
+                            loss=$(echo "$result" | grep -oE '[0-9]+% packet loss' | grep -oE '[0-9]+' | head -1)
+                            [ -z "$loss" ] && loss="0"
+                        else
+                            state="down"
+                            loss="100"
+                            latency=0
+                        fi
+                        echo "{\"state\": \"$state\", \"latency\": $latency, \"packet_loss\": $loss, \"host\": \"$host\", \"method\": \"$method\"}"
+                        ;;
+                    http|https)
+                        http_code=$(curl -s -o /dev/null -w "%{http_code}\n%{time_total}" --connect-timeout "$timeout" --max-time "$timeout" "$host" 2>/dev/null)
+                        code=$(echo "$http_code" | head -1)
+                        time_s=$(echo "$http_code" | tail -1)
+
+                        if [ "$code" -ge 200 ] && [ "$code" -lt 400 ] 2>/dev/null; then
+                            # Convert seconds to ms
+                            latency=$(echo "$time_s" | awk '{printf "%.0f", $1 * 1000}' 2>/dev/null || echo "0")
+                        else
+                            state="down"
+                            latency=0
+                        fi
+                        echo "{\"state\": \"$state\", \"latency\": $latency, \"http_code\": $code, \"host\": \"$host\", \"method\": \"$method\"}"
+                        ;;
+                    dns)
+                        start_t=$(date +%s)
+                        nslookup "$host" >/dev/null 2>&1
+                        rc=$?
+                        end_t=$(date +%s)
+                        if [ $rc -eq 0 ]; then
+                            latency=$(( (end_t - start_t) * 1000 ))
+                            [ "$latency" -eq 0 ] && latency=1
+                        else
+                            state="down"
+                            latency=0
+                        fi
+                        echo "{\"state\": \"$state\", \"latency\": $latency, \"host\": \"$host\", \"method\": \"$method\"}"
+                        ;;
+                    *)
+                        echo '{"error": "invalid method, use: ping, http, dns"}'
+                        ;;
+                esac
+                ;;
+
+            get_daemon_status)
+                if [ -f "$PID_FILE" ]; then
+                    local pid=$(cat "$PID_FILE")
+                    if kill -0 "$pid" 2>/dev/null; then
+                        local uptime_s=0
+                        if [ -d "/proc/$pid" ]; then
+                            local start=$(stat -c %Y "/proc/$pid" 2>/dev/null || echo "0")
+                            local now=$(date +%s)
+                            uptime_s=$((now - start))
+                        fi
+                        echo "{\"running\": true, \"pid\": $pid, \"uptime\": $uptime_s}"
+                    else
+                        rm -f "$PID_FILE"
+                        echo '{"running": false, "pid": 0, "uptime": 0}'
+                    fi
+                else
+                    echo '{"running": false, "pid": 0, "uptime": 0}'
+                fi
+                ;;
+
+            restart_daemon)
+                /etc/init.d/linkmonitor restart >/dev/null 2>&1
+                sleep 1
+                if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+                    echo '{"result": "ok"}'
+                else
+                    echo '{"result": "failed"}'
+                fi
+                ;;
+
+            *)
+                echo '{"error": "unknown method"}'
+                ;;
+        esac
+        ;;
+esac

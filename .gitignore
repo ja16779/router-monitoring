@@ -1,0 +1,28 @@
+# Local files
+*.log
+*.tmp
+*.swp
+*.swo
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+
+# Sensitive
+.env
+*.key
+*.pem
+credentials*
+
+# Temporary
+/tmp/
+/test-output/

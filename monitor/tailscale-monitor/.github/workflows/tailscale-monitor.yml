@@ -1,0 +1,101 @@
+name: Tailscale Monitor GL-MT6000
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  check-device:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restaurar estado anterior
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/ts_state
+          key: tailscale-state-gl-mt6000
+          restore-keys: tailscale-state-gl-mt6000
+
+      - name: Verificar GL-MT6000 en Tailscale
+        env:
+          TS_API_KEY: ${{ secrets.TS_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          send_telegram() {
+            curl -s --max-time 10 \
+              --data parse_mode="HTML" \
+              --data chat_id="$TELEGRAM_CHAT_ID" \
+              --data-urlencode "text=$1" \
+              "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" > /dev/null
+          }
+
+          # Leer estado previo (offline/online)
+          PREV_STATE="online"
+          if [ -f /tmp/ts_state/status ]; then
+            PREV_STATE=$(cat /tmp/ts_state/status)
+          fi
+          echo "Estado anterior: $PREV_STATE"
+
+          RESPONSE=$(curl -s --max-time 15 \
+            -H "Authorization: Bearer $TS_API_KEY" \
+            "https://api.tailscale.com/api/v2/tailnet/-/devices")
+
+          if [ -z "$RESPONSE" ]; then
+            echo "Error consultando API de Tailscale"
+            exit 0
+          fi
+
+          LAST_SEEN=$(echo "$RESPONSE" | jq -r '
+            .devices[]
+            | select(.hostname | ascii_downcase | contains("gl-mt6000"))
+            | .lastSeen // empty
+          ' | head -1)
+
+          if [ -z "$LAST_SEEN" ]; then
+            send_telegram "$(printf '🔴 <b>GL-MT6000 NO ENCONTRADO</b>\n<code>━━━━━━━━━━━━━━━━━━━━</code>\nEl router no aparece en Tailscale.\nPosible fallo critico o cuenta desvinculada.')"
+            mkdir -p /tmp/ts_state && echo "offline" > /tmp/ts_state/status
+            exit 0
+          fi
+
+          LAST_EPOCH=$(date -d "$LAST_SEEN" +%s)
+          NOW=$(date +%s)
+          DIFF=$(( NOW - LAST_EPOCH ))
+          MINUTES=$(( DIFF / 60 ))
+
+          echo "GL-MT6000 last seen: $LAST_SEEN (hace ${MINUTES} min)"
+
+          mkdir -p /tmp/ts_state
+
+          if [ "$DIFF" -gt 600 ]; then
+            # --- OFFLINE ---
+            FECHA=$(date "+%Y-%m-%d %H:%M UTC")
+            # Solo alertar si antes estaba online (evitar spam repetido)
+            if [ "$PREV_STATE" = "online" ]; then
+              MSG=$(printf '🔴 <b>GL-MT6000 OFFLINE</b>\n<code>━━━━━━━━━━━━━━━━━━━━</code>\n⏱ Sin conexion desde hace <b>%s minutos</b>\n📅 %s\n\n⚠️ Posible fallo en ambos enlaces WAN (Telmex + Megacable)' "$MINUTES" "$FECHA")
+              send_telegram "$MSG"
+              echo "ALERTA OFFLINE enviada"
+            else
+              echo "Sigue offline (${MINUTES} min) - alerta ya enviada, sin spam"
+            fi
+            echo "offline" > /tmp/ts_state/status
+          else
+            # --- ONLINE ---
+            if [ "$PREV_STATE" = "offline" ]; then
+              # Recuperacion: estaba offline y volvio
+              FECHA=$(date "+%Y-%m-%d %H:%M UTC")
+              MSG=$(printf '✅ <b>GL-MT6000 RECUPERADO</b>\n<code>━━━━━━━━━━━━━━━━━━━━</code>\n🟢 Router de vuelta en linea\n📅 %s\n\nAmbos enlaces WAN operativos' "$FECHA")
+              send_telegram "$MSG"
+              echo "ALERTA RECUPERACION enviada"
+            else
+              echo "OK: online (visto hace ${MINUTES} min)"
+            fi
+            echo "online" > /tmp/ts_state/status
+          fi
+
+      - name: Guardar estado
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: /tmp/ts_state
+          key: tailscale-state-gl-mt6000-${{ github.run_id }}

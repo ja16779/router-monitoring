@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "lastUsedProvider": "cline",
+  "providers": {
+    "cline": {
+      "settings": {
+        "provider": "cline",
+        "auth": {
+          "accessToken": "workos:eyJhbGciOiJSUzI1NiIsImtpZCI6InNzb19vaWRjX2tleV9wYWlyXzAxSzNBNTQxREZLR1FaRjE1R0Y4UkZNUDBWIn0.eyJleHRlcm5hbF9pZCI6InVzci0wMUtNUEg3MzNaMFBFRTRNQUQ0RFo0N1FCSiIsImxhc3ROYW1lIjoiQSIsImZpcnN0TmFtZSI6Ikpvc2UgTHVpcyIsImVtYWlsIjoiamExNjc3OUBnbWFpbC5jb20iLCJpc3MiOiJodHRwczovL2FwaS53b3Jrb3MuY29tL3VzZXJfbWFuYWdlbWVudC9jbGllbnRfMDFLM0E1NDFGTjhUQTNFUFBIVEQyMzI1QVIiLCJzdWIiOiJ1c2VyXzAxS01QSDY0MjM5NlhFTjU1NktEM1JLWFlOIiwic2lkIjoic2Vzc2lvbl8wMUtNUEg3MlJBNTgxQUpBTTA0MUtDVDg1UyIsImp0aSI6IjAxS01QSDczRDE2MzNTWDk1WDhHVldTQjU3IiwiZXhwIjoxNzc0NTgxMzQ5LCJpYXQiOjE3NzQ1Nzc3NDl9.YMYco-8mQQCEQYGW6fuhjyk60R3CBQHoFu3QtNg9t6swJoQfs4HjObO-l-iA5Rs1HheSYv6mgA6sr3lkr5Ud5ODSc9DV7tFyy3KH7aynYmG77rohiywruMloV2lQcoo29D4ESpWBj2lWvH9o8ezRprX-GOQGh450i1R9WNcdAoZLLN6QLPYCLyFqhJZOBfXOYVc7OV43m9SarAnoKFviWY3Xt_hBmv5ktvFEO-nPjkTJWbLEQeUhp0XkjtWe_wJ3Fm2OpWv4NU6Carp4oBA3LtZYfFLsdptxGXlqwvy939mn7lULcEZYHhRDUW_sj-RsmgPGMpEk-j6CZBoUPJhfvg",
+          "refreshToken": "FoxwRNVx187IpTSiaWsM9wgtQ",
+          "expiresAt": 1774581349000
+        },
+        "model": "anthropic/claude-sonnet-4.6"
+      },
+      "updatedAt": "2026-03-27T02:16:00.777Z",
+      "tokenSource": "oauth"
+    }
+  }
+}

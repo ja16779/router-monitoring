@@ -1,0 +1,29 @@
+{
+	"admin/network/linkmonitor": {
+		"title": "Link Monitor",
+		"order": 90,
+		"action": {
+			"type": "firstchild"
+		},
+		"depends": {
+			"acl": [ "luci-app-linkmonitor" ],
+			"uci": { "linkmonitor": true }
+		}
+	},
+	"admin/network/linkmonitor/overview": {
+		"title": "Overview",
+		"order": 1,
+		"action": {
+			"type": "view",
+			"path": "linkmonitor/overview"
+		}
+	},
+	"admin/network/linkmonitor/config": {
+		"title": "Configuration",
+		"order": 2,
+		"action": {
+			"type": "view",
+			"path": "linkmonitor/config"
+		}
+	}
+}

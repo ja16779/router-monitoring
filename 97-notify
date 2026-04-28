@@ -1,0 +1,60 @@
+#!/bin/sh
+# Hotplug script para notificaciones DHCP via Telegram
+
+LOGTAG="dhcp-notify"
+TELEGRAM_TOKEN="REDACTED_BOT_TOKEN"
+TELEGRAM_CHAT_ID="716542586"
+DEVICE_NAME="$(uname -n)"
+
+# Enviar mensaje a Telegram
+send_telegram() {
+    local message="$1"
+
+    logger -p local0.info -t "$LOGTAG" "$message"
+
+    [ -z "$TELEGRAM_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ] && return
+
+    curl -skim 10 \
+        --data disable_notification="false" \
+        --data parse_mode="HTML" \
+        --data chat_id="$TELEGRAM_CHAT_ID" \
+        --data-urlencode "text=$message" \
+        "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" >/dev/null 2>&1
+}
+
+# Procesar evento DHCP
+handle_dhcp_event() {
+    local hostname="${HOSTNAME:-NOHOSTNAME}"
+    local mac="$(echo "$MACADDR" | tr 'a-f' 'A-F')"
+    local safe_hostname="$(echo "$hostname" | sed 's/[^a-zA-Z0-9]//g')"
+    local timestamp="$(date '+%A %d-%b-%Y %T')"
+    local action_text=""
+
+    case "$ACTION" in
+        add)
+            action_text="New DHCP lease assigned"
+            /etc/script/98-dhcp 2>/dev/null &
+            ;;
+        update)
+            action_text="DHCP lease updated"
+            ;;
+        remove)
+            action_text="DHCP lease removed"
+            /etc/script/98-dhcp 2>/dev/null &
+            ;;
+        *)
+            logger -t "$LOGTAG" "Unknown action: $ACTION"
+            return
+            ;;
+    esac
+
+    send_telegram "<b>#${safe_hostname}</b> ${action_text} <b>#${DEVICE_NAME}</b>
+<pre>
+Time: ${timestamp}
+Hostname: ${hostname}
+IP Address: ${IPADDR}
+MAC Address: ${mac}
+</pre>"
+}
+
+handle_dhcp_event

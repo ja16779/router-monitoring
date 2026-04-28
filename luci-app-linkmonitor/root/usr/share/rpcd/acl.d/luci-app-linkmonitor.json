@@ -1,0 +1,27 @@
+{
+	"luci-app-linkmonitor": {
+		"description": "Grant access to Link Monitor",
+		"read": {
+			"ubus": {
+				"linkmonitor": [
+					"get_status",
+					"get_history",
+					"get_config_summary",
+					"test_link",
+					"get_daemon_status"
+				]
+			},
+			"uci": [ "linkmonitor" ]
+		},
+		"write": {
+			"ubus": {
+				"linkmonitor": [
+					"clear_history",
+					"restart_daemon",
+					"test_link"
+				]
+			},
+			"uci": [ "linkmonitor" ]
+		}
+	}
+}

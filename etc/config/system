@@ -1,0 +1,22 @@
+
+config system
+	option hostname 'GL-MT6000'
+	option ttylogin '1'
+	option log_size '64'
+	option urandom_seed '0'
+	option compat_version '1.0'
+	option cronloglevel '10'
+	option zonename 'America/Monterrey'
+	option log_proto 'udp'
+	option conloglevel '8'
+	option log_ip 'logs3.papertrailapp.com'
+	option log_port '52356'
+	option timezone 'CST6'
+
+config timeserver 'ntp'
+	option enable_server '1'
+	list server '0.openwrt.pool.ntp.org'
+	list server '1.openwrt.pool.ntp.org'
+	list server '2.openwrt.pool.ntp.org'
+	list server '3.openwrt.pool.ntp.org'
+

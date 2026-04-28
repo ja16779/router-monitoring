@@ -1,0 +1,47 @@
+# === Monitor (cada 5 min) ===
+*/5 * * * * /usr/bin/monitor/monitor_internet.sh 2>/dev/null
+*/5 * * * * /usr/bin/monitor/monitor_servicios.sh 2>/dev/null
+*/5 * * * * /usr/bin/monitor/monitor_sistema.sh 2>/dev/null
+
+# === Monitor (cada 15 min) ===
+*/15 * * * * /usr/bin/monitor/monitor_red.sh 2>/dev/null
+
+# === Traffic accounting (cada 30 min) ===
+*/30 * * * * /usr/bin/monitor/traffic_accounting.sh update >/dev/null 2>&1
+
+# === Roaming monitor (cada 2 min) ===
+*/2 * * * * /etc/script/roaming_monitor.sh
+
+# === Cada hora ===
+0 * * * * /etc/script/dns.sh
+0 * * * * /usr/bin/monitor/monitor_seguridad.sh 2>/dev/null
+0 * * * * /usr/bin/monitor/isp_tracker.sh collect 2>/dev/null
+
+# === Medianoche ===
+0 0 * * * /etc/script/contrack.sh
+0 0 * * * /etc/script/mega.sh && rm /tmp/dhcpmasq.log
+0 0 * * * /etc/script/telmexperf.sh
+0 0 * * * /usr/bin/monitor/mac_report.sh
+0 0 * * * /usr/bin/monitor/reporte_medianoche.sh
+0 0 * * * > /tmp/dnsmasq.log
+0 0 * * * > /var/log/messages && dmesg -c > /dev/null 2>&1
+5 0 * * * /usr/bin/monitor/reporte_leases.sh
+10 0 * * * /usr/bin/monitor/reporte_beryl_wifi.sh
+
+# === Madrugada ===
+0 1 * * * /etc/script/megaperf.sh
+0 3 * * 0 /usr/bin/monitor/log_cleaner.sh
+0 3 * * 7 /etc/script/reboot.sh
+0 4 * * * /usr/bin/monitor/bufferbloat_test.sh 2>/dev/null
+0 5 * * 0 /usr/bin/monitor/wifi_monitor_all.sh auto notify 2>/dev/null
+
+# === Manana ===
+0 7 * * * /usr/bin/monitor/reporte_diario.sh 2>/dev/null
+0 8 * * 1 /etc/script/check_firmware.sh
+0 8 * * 0 /usr/bin/monitor/adguard_stats.sh notify
+
+# === Tarde/Noche ===
+0 20 * * * /usr/bin/monitor/isp_tracker.sh notify 2>/dev/null
+
+# === Periodicos ===
+0 0 */3 * * /etc/script/backup_new.sh && /etc/script/adguard.sh

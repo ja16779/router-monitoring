@@ -1,0 +1,5 @@
+#!/bin/sh
+/etc/init.d/linkmonitor stop 2>/dev/null
+/etc/init.d/linkmonitor disable 2>/dev/null
+rm -rf /tmp/linkmonitor
+exit 0

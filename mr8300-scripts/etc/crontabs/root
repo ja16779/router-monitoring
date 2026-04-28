@@ -1,0 +1,37 @@
+#* * * * * /usr/bin/dhcp-leases-exporter.sh # DISABLED - script does not exist
+*/5 * * * * /usr/bin/monitor/monitor_internet.sh 2>/dev/null
+*/5 * * * * /usr/bin/monitor/monitor_servicios.sh 2>/dev/null
+#* * * * * /usr/bin/wan_uptime_tracker.sh # DISABLED - script does not exist
+*/15 * * * * /usr/bin/monitor/monitor_red.sh 2>/dev/null
+*/30 * * * * /usr/bin/lua /usr/share/gl-update-cable-mac.lua time
+*/30 * * * * /usr/bin/monitor/traffic_accounting.sh update >/dev/null 2>&1
+*/5 * * * * /usr/bin/monitor/monitor_sistema.sh 2>/dev/null
+#0 * * * * /etc/script/cola.sh
+0 * * * * /etc/script/dns.sh
+0 * * * * /usr/bin/monitor/monitor_seguridad.sh 2>/dev/null
+#0 */6 * * * /usr/sbin/ntpdate 0.openwrt.pool.ntp.org
+#0 0 * * * /etc/script/clean.sh
+0 0 * * * /etc/script/contrack.sh
+0 0 * * * /etc/script/mega.sh && rm /tmp/dhcpmasq.log
+0 0 * * * /etc/script/telmexperf.sh
+0 0 * * * /usr/bin/monitor/mac_report.sh
+0 0 * * * /usr/bin/monitor/reporte_medianoche.sh
+0 0 * * * > /tmp/dnsmasq.log
+0 0 * * * > /var/log/messages && dmesg -c > /dev/null 2>&1
+0 0 */3 * * /etc/script/backup_new.sh && /etc/script/adguard.sh
+0 1 * * * /etc/script/megaperf.sh
+0 3 * * 0 /usr/bin/monitor/log_cleaner.sh
+0 3 * * 7 /etc/script/reboot.sh
+0 7 * * * /usr/bin/monitor/reporte_diario.sh 2>/dev/null
+0 8 * * 1 /etc/script/check_firmware.sh
+0 8 * * 0 /usr/bin/monitor/adguard_stats.sh notify
+0 9 * * * /etc/script/check_glinet.sh
+10 0 * * * /usr/bin/monitor/reporte_beryl_wifi.sh
+5 0 * * * /usr/bin/monitor/reporte_leases.sh
+0 4 * * * /usr/bin/monitor/bufferbloat_test.sh 2>/dev/null
+0 5 * * 0 /usr/bin/monitor/wifi_monitor_all.sh auto notify 2>/dev/null
+0 * * * * /usr/bin/monitor/isp_tracker.sh collect 2>/dev/null
+0 20 * * * /usr/bin/monitor/isp_tracker.sh notify 2>/dev/null
+*/2 * * * * /etc/script/roaming_monitor.sh
+#0 0 * * 0 /etc/script/luci.sh # DISABLED - broke nginx
+#0 * * * * /etc/script/tuya_check.sh 2>/dev/null

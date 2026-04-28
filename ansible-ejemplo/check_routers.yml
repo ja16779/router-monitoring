@@ -1,0 +1,94 @@
+---
+# Equivalente al /router-check — verifica servicios críticos en ambos routers
+# Uso: ansible-playbook -i inventory.ini check_routers.yml
+
+- name: Verificar Flint-2
+  hosts: flint2
+  gather_facts: false
+
+  tasks:
+    - name: Servicios críticos
+      ansible.builtin.raw: |
+        for svc in adguardhome tailscale mdns-repeater mwan3 dnsmasq irqbalance collectd banip; do
+          status=$(/etc/init.d/$svc status 2>&1 | head -1)
+          echo "$svc: $status"
+        done
+      register: servicios
+      changed_when: false
+
+    - name: Mostrar servicios
+      ansible.builtin.debug:
+        msg: "{{ servicios.stdout_lines }}"
+
+    - name: Estado mwan3
+      ansible.builtin.raw: mwan3 status 2>&1 | grep "interface wan"
+      register: mwan3
+      changed_when: false
+
+    - name: Mostrar mwan3
+      ansible.builtin.debug:
+        msg: "{{ mwan3.stdout_lines }}"
+
+    - name: Temperatura CPU
+      ansible.builtin.raw: awk '{printf "%.1f°C\n", $1/1000}' /sys/class/thermal/thermal_zone0/temp
+      register: temp
+      changed_when: false
+
+    - name: Mostrar temperatura
+      ansible.builtin.debug:
+        msg: "Temp: {{ temp.stdout | trim }}"
+
+    - name: Clientes DHCP
+      ansible.builtin.raw: wc -l < /tmp/dhcp.leases
+      register: leases
+      changed_when: false
+
+    - name: Mostrar leases
+      ansible.builtin.debug:
+        msg: "DHCP leases: {{ leases.stdout | trim }}"
+
+    - name: Focos Surplife — estado
+      ansible.builtin.raw: cat /tmp/focos_reconnect.log 2>/dev/null | tail -5 || echo "Sin actividad reciente"
+      register: focos
+      changed_when: false
+
+    - name: Mostrar log focos
+      ansible.builtin.debug:
+        msg: "{{ focos.stdout_lines }}"
+
+
+- name: Verificar Beryl AX
+  hosts: beryl
+  gather_facts: false
+
+  tasks:
+    - name: Clientes WiFi
+      ansible.builtin.raw: |
+        for iface in wlan0 wlan0-1 wlan1 wlan1-1; do
+          count=$(iw dev $iface station dump 2>/dev/null | grep -c "^Station")
+          echo "$iface: $count clientes"
+        done
+      register: wifi
+      changed_when: false
+
+    - name: Mostrar clientes WiFi
+      ansible.builtin.debug:
+        msg: "{{ wifi.stdout_lines }}"
+
+    - name: irqbalance en Beryl
+      ansible.builtin.raw: pidof irqbalance >/dev/null && echo "irqbalance: running" || echo "irqbalance: NOT running"
+      register: irq
+      changed_when: false
+
+    - name: Mostrar irqbalance
+      ansible.builtin.debug:
+        msg: "{{ irq.stdout | trim }}"
+
+    - name: RAM disponible
+      ansible.builtin.raw: free | awk 'NR==2{printf "RAM: %dMB usado / %dMB total\n", $3/1024, $2/1024}'
+      register: ram
+      changed_when: false
+
+    - name: Mostrar RAM
+      ansible.builtin.debug:
+        msg: "{{ ram.stdout | trim }}"

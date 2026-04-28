@@ -1,0 +1,61 @@
+# /etc/hotplug.d/dhcp/98-client-join-notification
+
+#!/bin/sh
+
+send_to_telegram() {
+    logger -p local0.info -t dhcp-join-notify "$1"
+    #token="REDACTED_BOT_TOKEN"
+    #token="REDACTED_BOT_TOKEN"
+    token="REDACTED_BOT_TOKEN"
+    chat_id="716542586"
+    if [[ -n "${token}" ]] && [[ -n "${chat_id}" ]]; then
+        curl -skim 10 --data disable_notification="false" --data parse_mode="MarkdownV2" --data chat_id="$chat_id" --data-urlencode "text=$1" "https://api.telegram.org/bot${token}/sendMessage" > /dev/null
+    else
+        logger -p local0.info -t dhcp-join-notify "Error: Your telegram chat_id or token is empty"
+    fi
+}
+
+logger -p local0.info -t dhcp-join-notify "WiFi Client Telegram Notification. Action: $ACTION"
+
+if [ "$ACTION" = "update" ] || [ "$ACTION" = "add" ]; then
+    device_name=$(cat /tmp/sysinfo/model | sed 's/[^a-zA-Z0-9]//g')
+    new_client=$(logread -e 'dnsmasq-dhcp.*DHCPACK' | tail -n1)
+    hostname=$(echo "$new_client" | awk '{print $11}')
+    [[ -z "${hostname}" ]] && hostname="NOHOSTNAME"
+    ip_address=$(echo "$new_client" | awk '{print $9}')
+    mac_address=$(echo "$new_client" | awk '{print $10}')
+
+    if [[ -n "${ip_address}" ]]; then
+        sed -i "/${ip_address} ${hostname} ${mac_address}/d" /tmp/wifi_clients.txt # Remove duplicate lines if there's any
+        echo "${ip_address} ${hostname} ${mac_address}" >> /tmp/wifi_clients.txt
+
+        if [ "$ACTION" = "add" ]; then
+            local_msg="New device JOINED the network, sending it to Telegram..."
+            logger -p local0.info -t dhcp-join-notify "$local_msg"
+            send_to_telegram "\#$(echo "${hostname}" | sed 's/[^a-zA-Z0-9]//g') JOINED \#${device_name}:\
+\`\`\`\
+Time: $(date "+%A %d-%b-%Y %T")\
+Hostname: ${hostname}\
+IP Address: ${ip_address}\
+MAC Address: ${mac_address}\
+\`\`\`"
+        elif [ "$ACTION" = "update" ]; then
+            local_msg="Device details UPDATED in the network, notifying Telegram..."
+            logger -p local0.info -t dhcp-update-notify "$local_msg"
+            send_to_telegram "\#$(echo "${hostname}" | sed 's/[^a-zA-Z0-9]//g') UPDATED on \#${device_name}:\
+\`\`\`\
+Time: $(date "+%A %d-%b-%Y %T")\
+Hostname: ${hostname}\
+IP Address: ${ip_address}\
+MAC Address: ${mac_address}\
+\`\`\`"
+        fi
+
+        sshpass -p admin scp /tmp/dhcp.leases root@192.168.8.2:/tmp/
+    fi
+fi
+
+
+
+# THIS SCRIPT WAS WRITTEN BY https://www.facebook.com/galihpa/
+# CHECK OUT THE GITHUB REPO AT: https://github.com/hillz2/OpenWrt_WiFi_Client_Notification

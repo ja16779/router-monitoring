@@ -1,0 +1,101 @@
+#!/bin/sh
+# Configuration file for OpenWrt Threat Alert System
+# Copy this to /etc/threat-alert/config.sh and fill in your values
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TELEGRAM CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Your Telegram bot token (from @BotFather)
+TELEGRAM_BOT_TOKEN="YOUR_BOT_TOKEN_HERE"
+
+# Chat ID to receive alerts (your user ID or group ID)
+TELEGRAM_CHAT_ID="716542586"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# THREAT FEED CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Directory to store threat feeds
+FEED_DIR="/etc/threat-alert/feeds"
+
+# URLs of threat intelligence feeds (compatible with ash/BusyBox)
+# Malware domains from abuse.ch
+THREAT_FEED_URLHAUS="https://urlhaus-api.abuse.ch/v1/urls/recent/"
+
+# Emerging Threats C&C list
+THREAT_FEED_EMERGING="https://rules.emergingthreats.net/blockrules/compromised-ips.txt"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ANOMALY DETECTION CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Maximum allowed new connections per device in 5 minutes
+# (port scanning detection threshold)
+MAX_NEW_CONNECTIONS=50
+
+# Maximum allowed new ports per device in 5 minutes
+MAX_NEW_PORTS=20
+
+# SSH brute force threshold (failed login attempts)
+SSH_FAILED_THRESHOLD=5
+
+# DNS query threshold per device in 10 seconds
+DNS_QUERY_THRESHOLD=100
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ADGUARDHOME CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+# AdGuardHome API endpoint
+AGH_API="http://127.0.0.1:3000/control"
+
+# AdGuardHome filter name for threat feed
+AGH_FILTER_NAME="Threat Intelligence Feed"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LOGGING CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Log directory
+LOG_DIR="/var/log/threat-alert"
+
+# Log level: DEBUG, INFO, WARN, ERROR
+LOG_LEVEL="INFO"
+
+# Keep logs for N days
+LOG_RETENTION_DAYS=30
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ALERT CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Enable/disable alerts by type
+ALERT_MALWARE_DOMAIN=1      # Block malicious domains
+ALERT_PORT_SCANNING=1       # Port scanning detected
+ALERT_SSH_BRUTEFORCE=1      # SSH brute force attempt
+ALERT_DNS_FLOODING=1        # DNS query flooding
+ALERT_FIREWALL_BLOCK=0      # Every firewall block (noisy, disable)
+ALERT_FEED_UPDATE=1         # Feed update notifications
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ADVANCED CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Enable threat feed auto-update (1=yes, 0=no)
+AUTO_UPDATE_FEEDS=1
+
+# Feed update interval in hours
+FEED_UPDATE_INTERVAL=12
+
+# Enable anomaly detection (1=yes, 0=no)
+ENABLE_ANOMALY_DETECTION=1
+
+# Anomaly detection interval in minutes
+ANOMALY_CHECK_INTERVAL=5
+
+# Device isolation VLAN (future feature, currently unused)
+QUARANTINE_VLAN=99
+
+# Router IP address (for sinkhole response)
+ROUTER_IP="192.168.10.1"

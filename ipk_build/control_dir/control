@@ -1,0 +1,7 @@
+Package: luci-app-linkmonitor
+Version: 1.0.0-1
+Depends: luci-base, curl
+Section: luci
+Architecture: all
+Installed-Size: 0
+Description: LuCI Link Monitor - Network link monitoring with configurable alerts

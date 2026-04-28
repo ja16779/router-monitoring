@@ -1,0 +1,442 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "Grafana Cloud Prometheus datasource",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "id": 100,
+      "title": "Sistema",
+      "type": "row"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "blue", "value": null}]}
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 3, "w": 24, "x": 0, "y": 1},
+      "id": 1,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "name"},
+      "targets": [{
+        "expr": "node_openwrt_info{instance=\"beryl-gl-mt3000\"}",
+        "legendFormat": "GL.iNet GL-MT3000  |  OpenWrt {{release}}  |  {{system}}  |  Kernel {{nodename}}"
+      }],
+      "title": "Device Info",
+      "type": "stat"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "s", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}}
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 4},
+      "id": 2,
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "node_time_seconds{instance=\"beryl-gl-mt3000\"} - node_boot_time_seconds{instance=\"beryl-gl-mt3000\"}", "legendFormat": "Uptime"}],
+      "title": "Uptime",
+      "type": "stat"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "short", "min": 0, "max": 2, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}, {"color": "red", "value": 1.5}]}}
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 4},
+      "id": 3,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [
+        {"expr": "node_load1{instance=\"beryl-gl-mt3000\"}", "legendFormat": "1m"},
+        {"expr": "node_load5{instance=\"beryl-gl-mt3000\"}", "legendFormat": "5m"},
+        {"expr": "node_load15{instance=\"beryl-gl-mt3000\"}", "legendFormat": "15m"}
+      ],
+      "title": "CPU Load",
+      "type": "stat"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "percentunit", "min": 0, "max": 1, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 0.7}, {"color": "red", "value": 0.85}]}}
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 4},
+      "id": 4,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "1 - (node_memory_MemAvailable_bytes{instance=\"beryl-gl-mt3000\"} / node_memory_MemTotal_bytes{instance=\"beryl-gl-mt3000\"})", "legendFormat": "RAM"}],
+      "title": "RAM Usada",
+      "type": "stat"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "bytes", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}}
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 4},
+      "id": 5,
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "node_memory_MemAvailable_bytes{instance=\"beryl-gl-mt3000\"}", "legendFormat": "Available"}],
+      "title": "RAM Disponible",
+      "type": "stat"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 10000}, {"color": "red", "value": 25000}]}}
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 4},
+      "id": 6,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "node_nf_conntrack_entries{instance=\"beryl-gl-mt3000\"}", "legendFormat": "Activas"}],
+      "title": "Conntrack",
+      "type": "stat"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "percentunit", "min": 0, "max": 1, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0.8}]}}
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 4},
+      "id": 7,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "node_nf_conntrack_entries{instance=\"beryl-gl-mt3000\"} / node_nf_conntrack_entries_limit{instance=\"beryl-gl-mt3000\"}", "legendFormat": "Uso"}],
+      "title": "Conntrack %",
+      "type": "stat"
+    },
+    {
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 8},
+      "id": 101,
+      "title": "Temperaturas",
+      "type": "row"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "celsius", "min": 30, "max": 90, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 65}, {"color": "red", "value": 80}]}}
+      },
+      "gridPos": {"h": 5, "w": 6, "x": 0, "y": 9},
+      "id": 10,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "node_hwmon_temp_celsius{instance=\"beryl-gl-mt3000\",chip=\"thermal_thermal_zone0\"}", "legendFormat": "CPU"}],
+      "title": "CPU Temp",
+      "type": "stat"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "celsius", "min": 30, "max": 90, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 60}, {"color": "red", "value": 75}]}}
+      },
+      "gridPos": {"h": 5, "w": 6, "x": 6, "y": 9},
+      "id": 11,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "node_hwmon_temp_celsius{instance=\"beryl-gl-mt3000\",chip=\"ieee80211_phy0\"}", "legendFormat": "2.4 GHz Radio"}],
+      "title": "WiFi 2.4G Temp",
+      "type": "stat"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "celsius", "min": 30, "max": 90, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 60}, {"color": "red", "value": 75}]}}
+      },
+      "gridPos": {"h": 5, "w": 6, "x": 12, "y": 9},
+      "id": 12,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "node_hwmon_temp_celsius{instance=\"beryl-gl-mt3000\",chip=\"ieee80211_phy1\"}", "legendFormat": "5 GHz Radio"}],
+      "title": "WiFi 5G Temp",
+      "type": "stat"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "celsius", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 15, "lineWidth": 2}, "color": {"mode": "palette-classic"}}
+      },
+      "gridPos": {"h": 5, "w": 6, "x": 18, "y": 9},
+      "id": 13,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "node_hwmon_temp_celsius{instance=\"beryl-gl-mt3000\",chip=\"thermal_thermal_zone0\"}", "legendFormat": "CPU"},
+        {"expr": "node_hwmon_temp_celsius{instance=\"beryl-gl-mt3000\",chip=\"ieee80211_phy0\"}", "legendFormat": "2.4G"},
+        {"expr": "node_hwmon_temp_celsius{instance=\"beryl-gl-mt3000\",chip=\"ieee80211_phy1\"}", "legendFormat": "5G"},
+        {"expr": "node_hwmon_temp_celsius{instance=\"beryl-gl-mt3000\",chip=\"mdio-bus_mdio-bus:05\"}", "legendFormat": "Switch"}
+      ],
+      "title": "Temperaturas (historial)",
+      "type": "timeseries"
+    },
+    {
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14},
+      "id": 102,
+      "title": "CPU & Memoria",
+      "type": "row"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "percentunit", "min": 0, "max": 1, "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 30, "stacking": {"mode": "normal"}, "lineWidth": 1}, "color": {"mode": "palette-classic"}}
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 15},
+      "id": 20,
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "lastNotNull"]}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "sum by (mode) (rate(node_cpu_seconds_total{instance=\"beryl-gl-mt3000\",mode!=\"idle\"}[5m])) / 2", "legendFormat": "{{mode}}"}
+      ],
+      "title": "CPU Usage by Mode",
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "bytes", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 20, "lineWidth": 1}, "color": {"mode": "palette-classic"}}
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 15},
+      "id": 21,
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull"]}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "node_memory_MemTotal_bytes{instance=\"beryl-gl-mt3000\"} - node_memory_MemAvailable_bytes{instance=\"beryl-gl-mt3000\"}", "legendFormat": "Used"},
+        {"expr": "node_memory_Buffers_bytes{instance=\"beryl-gl-mt3000\"}", "legendFormat": "Buffers"},
+        {"expr": "node_memory_Cached_bytes{instance=\"beryl-gl-mt3000\"}", "legendFormat": "Cached"},
+        {"expr": "node_memory_MemFree_bytes{instance=\"beryl-gl-mt3000\"}", "legendFormat": "Free"}
+      ],
+      "title": "Memory Breakdown",
+      "type": "timeseries"
+    },
+    {
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 23},
+      "id": 103,
+      "title": "WiFi Overview",
+      "type": "row"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "purple", "value": null}]}}
+      },
+      "gridPos": {"h": 5, "w": 4, "x": 0, "y": 24},
+      "id": 30,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
+      "targets": [{"expr": "sum(wifi_stations{instance=\"beryl-gl-mt3000\"})", "legendFormat": "Total"}],
+      "title": "Total WiFi Clients",
+      "type": "stat"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "short", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 20, "lineWidth": 2, "pointSize": 5, "showPoints": "auto"}, "color": {"mode": "palette-classic"}}
+      },
+      "gridPos": {"h": 5, "w": 10, "x": 4, "y": 24},
+      "id": 31,
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull"]}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "wifi_stations{instance=\"beryl-gl-mt3000\",ifname=\"wlan0\"}", "legendFormat": "Mega 2.4G (wlan0)"},
+        {"expr": "wifi_stations{instance=\"beryl-gl-mt3000\",ifname=\"wlan0-1\"}", "legendFormat": "IOT (wlan0-1)"},
+        {"expr": "wifi_stations{instance=\"beryl-gl-mt3000\",ifname=\"wlan1\"}", "legendFormat": "AXTEL 5G (wlan1)"},
+        {"expr": "wifi_stations{instance=\"beryl-gl-mt3000\",ifname=\"wlan1-1\"}", "legendFormat": "Mega 5G (wlan1-1)"}
+      ],
+      "title": "Clients per SSID",
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "dBm", "min": -100, "max": -20, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "yellow", "value": -70}, {"color": "green", "value": -50}]}, "color": {"mode": "thresholds"}}
+      },
+      "gridPos": {"h": 5, "w": 10, "x": 14, "y": 24},
+      "id": 32,
+      "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showUnfilled": true, "minVizWidth": 0, "minVizHeight": 10},
+      "targets": [
+        {"expr": "wifi_network_signal_dbm{instance=\"beryl-gl-mt3000\"}", "legendFormat": "{{ssid}} ({{ifname}})"}
+      ],
+      "title": "WiFi Network Signal",
+      "type": "bargauge"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "dBm", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10, "lineWidth": 2}, "color": {"mode": "palette-classic"}}
+      },
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 29},
+      "id": 33,
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "min", "max"]}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "wifi_network_signal_dbm{instance=\"beryl-gl-mt3000\"}", "legendFormat": "{{ssid}} Signal"},
+        {"expr": "wifi_network_noise_dbm{instance=\"beryl-gl-mt3000\"}", "legendFormat": "{{ssid}} Noise"}
+      ],
+      "title": "Signal vs Noise per SSID",
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "short", "min": 0, "max": 100, "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 20, "lineWidth": 2}, "color": {"mode": "palette-classic"}}
+      },
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 29},
+      "id": 34,
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "mean"]}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "wifi_network_quality{instance=\"beryl-gl-mt3000\"}", "legendFormat": "{{ssid}}"}
+      ],
+      "title": "WiFi Quality per SSID",
+      "type": "timeseries"
+    },
+    {
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 36},
+      "id": 104,
+      "title": "WiFi Clients Detail",
+      "type": "row"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "dBm", "min": -100, "max": -20, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": -75}, {"color": "yellow", "value": -65}, {"color": "green", "value": -50}]}, "color": {"mode": "thresholds"}}
+      },
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 37},
+      "id": 40,
+      "options": {"displayMode": "gradient", "orientation": "horizontal", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showUnfilled": true, "minVizWidth": 0, "minVizHeight": 10},
+      "targets": [
+        {"expr": "wifi_station_signal_dbm{instance=\"beryl-gl-mt3000\"}", "legendFormat": "{{mac}} ({{ifname}})"}
+      ],
+      "title": "Client Signal Strength",
+      "type": "bargauge"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "dBm", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10, "lineWidth": 2, "pointSize": 5, "showPoints": "auto"}, "color": {"mode": "palette-classic"}}
+      },
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 37},
+      "id": 41,
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "min", "max"]}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "wifi_station_signal_dbm{instance=\"beryl-gl-mt3000\"}", "legendFormat": "{{mac}} ({{ifname}})"}
+      ],
+      "title": "Client Signal History",
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "Kbits", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 15, "lineWidth": 2}, "color": {"mode": "palette-classic"}}
+      },
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 44},
+      "id": 42,
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull"]}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "wifi_station_transmit_kilobits_per_second{instance=\"beryl-gl-mt3000\"}", "legendFormat": "TX {{mac}} ({{ifname}})"},
+        {"expr": "wifi_station_receive_kilobits_per_second{instance=\"beryl-gl-mt3000\"}", "legendFormat": "RX {{mac}} ({{ifname}})"}
+      ],
+      "title": "Client Throughput (TX Rate / RX Rate)",
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "ms", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10, "lineWidth": 2}, "color": {"mode": "palette-classic"}}
+      },
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 44},
+      "id": 43,
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["lastNotNull"]}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "wifi_station_inactive_milliseconds{instance=\"beryl-gl-mt3000\"}", "legendFormat": "{{mac}} ({{ifname}})"}
+      ],
+      "title": "Client Inactive Time",
+      "type": "timeseries"
+    },
+    {
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 51},
+      "id": 105,
+      "title": "Network Traffic",
+      "type": "row"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "Bps", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 20, "lineWidth": 2}, "color": {"mode": "palette-classic"}}
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 52},
+      "id": 50,
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "rate(node_network_receive_bytes_total{instance=\"beryl-gl-mt3000\",exported_device=\"eth0\"}[2m])", "legendFormat": "eth0 RX (Uplink)"},
+        {"expr": "-rate(node_network_transmit_bytes_total{instance=\"beryl-gl-mt3000\",exported_device=\"eth0\"}[2m])", "legendFormat": "eth0 TX (Uplink)"}
+      ],
+      "title": "Uplink Traffic (eth0 - to Flint)",
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "Bps", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 20, "lineWidth": 2}, "color": {"mode": "palette-classic"}}
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 52},
+      "id": 51,
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "rate(node_network_receive_bytes_total{instance=\"beryl-gl-mt3000\",exported_device=~\"br-lan.*\"}[2m])", "legendFormat": "{{exported_device}} RX"},
+        {"expr": "-rate(node_network_transmit_bytes_total{instance=\"beryl-gl-mt3000\",exported_device=~\"br-lan.*\"}[2m])", "legendFormat": "{{exported_device}} TX"}
+      ],
+      "title": "Bridge/VLAN Traffic",
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "Bps", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 20, "lineWidth": 2}, "color": {"mode": "palette-classic"}}
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 60},
+      "id": 52,
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "rate(node_network_receive_bytes_total{instance=\"beryl-gl-mt3000\",exported_device=~\"wlan.*\"}[2m])", "legendFormat": "{{exported_device}} RX"},
+        {"expr": "-rate(node_network_transmit_bytes_total{instance=\"beryl-gl-mt3000\",exported_device=~\"wlan.*\"}[2m])", "legendFormat": "{{exported_device}} TX"}
+      ],
+      "title": "WiFi Interface Traffic",
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "pps", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 15, "lineWidth": 1}, "color": {"mode": "palette-classic"}}
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 60},
+      "id": 53,
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean"]}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "rate(node_network_receive_packets_total{instance=\"beryl-gl-mt3000\",exported_device=~\"eth0|wlan.*\"}[2m])", "legendFormat": "{{exported_device}} RX pps"},
+        {"expr": "-rate(node_network_transmit_packets_total{instance=\"beryl-gl-mt3000\",exported_device=~\"eth0|wlan.*\"}[2m])", "legendFormat": "{{exported_device}} TX pps"}
+      ],
+      "title": "Packets per Second",
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "short", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10, "lineWidth": 2}, "color": {"mode": "palette-classic"}}
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 68},
+      "id": 54,
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "rate(node_network_receive_drop_total{instance=\"beryl-gl-mt3000\",exported_device=~\"eth0|wlan.*|br-lan.*\"}[2m])", "legendFormat": "{{exported_device}} RX drops/s"},
+        {"expr": "rate(node_network_transmit_drop_total{instance=\"beryl-gl-mt3000\",exported_device=~\"eth0|wlan.*|br-lan.*\"}[2m])", "legendFormat": "{{exported_device}} TX drops/s"}
+      ],
+      "title": "Network Drops/s",
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "short", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10, "lineWidth": 2}, "color": {"mode": "palette-classic"}}
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 68},
+      "id": 55,
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "rate(node_network_receive_errs_total{instance=\"beryl-gl-mt3000\",exported_device=~\"eth0|wlan.*|br-lan.*\"}[2m])", "legendFormat": "{{exported_device}} RX errs/s"},
+        {"expr": "rate(node_network_transmit_errs_total{instance=\"beryl-gl-mt3000\",exported_device=~\"eth0|wlan.*|br-lan.*\"}[2m])", "legendFormat": "{{exported_device}} TX errs/s"}
+      ],
+      "title": "Network Errors/s",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["openwrt", "beryl", "wifi", "gl-mt3000"],
+  "templating": {"list": []},
+  "time": {"from": "now-3h", "to": "now"},
+  "timepicker": {
+    "refresh_intervals": ["10s", "30s", "1m", "5m"],
+    "time_options": ["5m", "15m", "1h", "3h", "6h", "12h", "24h", "2d", "7d"]
+  },
+  "timezone": "browser",
+  "title": "Beryl AX - GL-MT3000 Dashboard",
+  "uid": "beryl-ax-cloud",
+  "version": 1
+}

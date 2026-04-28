@@ -1,0 +1,375 @@
+#!/bin/sh
+# linkmonitor-daemon - Network link monitoring daemon for OpenWrt
+# Monitors configured hosts via ping/HTTP and triggers alerts on state changes.
+
+CONF="linkmonitor"
+STATE_DIR="/tmp/linkmonitor"
+HISTORY_FILE="$STATE_DIR/history.json"
+STATUS_FILE="$STATE_DIR/status.json"
+PID_FILE="/var/run/linkmonitor.pid"
+MAX_HISTORY=200
+
+mkdir -p "$STATE_DIR"
+
+# Initialize files if missing
+[ -f "$HISTORY_FILE" ] || echo '[]' > "$HISTORY_FILE"
+[ -f "$STATUS_FILE" ] || echo '{}' > "$STATUS_FILE"
+
+log_msg() {
+    logger -t linkmonitor "$1"
+}
+
+# Get current timestamp
+timestamp() {
+    date +%s
+}
+
+timestamp_iso() {
+    date -Iseconds 2>/dev/null || date +"%Y-%m-%dT%H:%M:%S"
+}
+
+# Read UCI global config
+read_global_config() {
+    GLOBAL_ENABLED=$(uci -q get $CONF.global.enabled || echo "1")
+    GLOBAL_INTERVAL=$(uci -q get $CONF.global.interval || echo "30")
+    HISTORY_SIZE=$(uci -q get $CONF.global.history_size || echo "$MAX_HISTORY")
+}
+
+# Ping check: returns latency in ms or "fail"
+do_ping_check() {
+    local host="$1"
+    local timeout="$2"
+    local count="${3:-3}"
+
+    result=$(ping -c "$count" -W "$timeout" "$host" 2>/dev/null)
+    if [ $? -eq 0 ]; then
+        # Extract average latency
+        latency=$(echo "$result" | grep -oE 'avg[^0-9]*([0-9.]+)' | grep -oE '[0-9.]+' | head -1)
+        if [ -z "$latency" ]; then
+            # Alternative parsing for busybox ping
+            latency=$(echo "$result" | grep 'round-trip' | cut -d'/' -f5)
+        fi
+        [ -z "$latency" ] && latency="0"
+        echo "$latency"
+    else
+        echo "fail"
+    fi
+}
+
+# HTTP check: returns response time in ms or "fail"
+do_http_check() {
+    local url="$1"
+    local timeout="$2"
+
+    start_time=$(date +%s%N 2>/dev/null)
+    if [ -z "$start_time" ] || [ "$start_time" = "%N" ]; then
+        # Fallback for systems without nanosecond support
+        start_time=$(date +%s)
+        http_code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout "$timeout" --max-time "$timeout" "$url" 2>/dev/null)
+        end_time=$(date +%s)
+        if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 400 ] 2>/dev/null; then
+            latency=$(( (end_time - start_time) * 1000 ))
+            [ "$latency" -eq 0 ] && latency=1
+            echo "$latency"
+        else
+            echo "fail"
+        fi
+    else
+        http_code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout "$timeout" --max-time "$timeout" "$url" 2>/dev/null)
+        end_time=$(date +%s%N)
+        if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 400 ] 2>/dev/null; then
+            latency=$(( (end_time - start_time) / 1000000 ))
+            [ "$latency" -eq 0 ] && latency=1
+            echo "$latency"
+        else
+            echo "fail"
+        fi
+    fi
+}
+
+# DNS check: returns latency or "fail"
+do_dns_check() {
+    local host="$1"
+    local timeout="$2"
+
+    start_ms=$(date +%s)
+    nslookup "$host" >/dev/null 2>&1
+    rc=$?
+    end_ms=$(date +%s)
+
+    if [ $rc -eq 0 ]; then
+        latency=$(( (end_ms - start_ms) * 1000 ))
+        [ "$latency" -eq 0 ] && latency=1
+        echo "$latency"
+    else
+        echo "fail"
+    fi
+}
+
+# Trigger alerts for a link state change
+trigger_alerts() {
+    local link_name="$1"
+    local host="$2"
+    local new_state="$3"
+    local old_state="$4"
+    local latency="$5"
+
+    local idx=0
+    while true; do
+        local atype=$(uci -q get "$CONF.@alert[$idx].type")
+        [ -z "$atype" ] && break
+
+        local aenabled=$(uci -q get "$CONF.@alert[$idx].enabled" || echo "0")
+        if [ "$aenabled" != "1" ]; then
+            idx=$((idx + 1))
+            continue
+        fi
+
+        # Filter: only trigger on down events, or on recovery, or both
+        local atrigger=$(uci -q get "$CONF.@alert[$idx].trigger" || echo "both")
+        case "$atrigger" in
+            down)
+                [ "$new_state" != "down" ] && { idx=$((idx + 1)); continue; }
+                ;;
+            up)
+                [ "$new_state" != "up" ] && { idx=$((idx + 1)); continue; }
+                ;;
+        esac
+
+        case "$atype" in
+            syslog)
+                if [ "$new_state" = "down" ]; then
+                    log_msg "ALERT: Link '$link_name' ($host) is DOWN"
+                else
+                    log_msg "ALERT: Link '$link_name' ($host) recovered (UP, latency: ${latency}ms)"
+                fi
+                ;;
+            email)
+                local recipient=$(uci -q get "$CONF.@alert[$idx].recipient")
+                local subject_prefix=$(uci -q get "$CONF.@alert[$idx].subject_prefix" || echo "[LinkMonitor]")
+                if [ -n "$recipient" ] && command -v sendmail >/dev/null 2>&1; then
+                    if [ "$new_state" = "down" ]; then
+                        echo -e "Subject: $subject_prefix Link DOWN: $link_name\n\nLink '$link_name' ($host) is DOWN.\nTime: $(timestamp_iso)" | sendmail "$recipient"
+                    else
+                        echo -e "Subject: $subject_prefix Link UP: $link_name\n\nLink '$link_name' ($host) recovered.\nLatency: ${latency}ms\nTime: $(timestamp_iso)" | sendmail "$recipient"
+                    fi
+                fi
+                ;;
+            script)
+                local script_path=$(uci -q get "$CONF.@alert[$idx].path")
+                if [ -n "$script_path" ] && [ -x "$script_path" ]; then
+                    "$script_path" "$link_name" "$host" "$new_state" "$latency" &
+                fi
+                ;;
+            webhook)
+                local webhook_url=$(uci -q get "$CONF.@alert[$idx].url")
+                if [ -n "$webhook_url" ]; then
+                    local payload="{\"link\":\"$link_name\",\"host\":\"$host\",\"state\":\"$new_state\",\"latency\":$latency,\"time\":\"$(timestamp_iso)\"}"
+                    curl -s -X POST -H "Content-Type: application/json" -d "$payload" "$webhook_url" >/dev/null 2>&1 &
+                fi
+                ;;
+        esac
+
+        idx=$((idx + 1))
+    done
+}
+
+# Add event to history
+add_history_event() {
+    local link_name="$1"
+    local host="$2"
+    local state="$3"
+    local latency="$4"
+    local ts=$(timestamp)
+    local ts_iso=$(timestamp_iso)
+
+    local event="{\"name\":\"$link_name\",\"host\":\"$host\",\"state\":\"$state\",\"latency\":$latency,\"timestamp\":$ts,\"time\":\"$ts_iso\"}"
+
+    # Read existing history, append, and trim
+    if [ -f "$HISTORY_FILE" ]; then
+        local count=$(jsonfilter -i "$HISTORY_FILE" -t @ -e '@.length' 2>/dev/null || echo "0")
+        if [ "$count" -ge "$HISTORY_SIZE" ]; then
+            # Trim oldest entries: keep last (HISTORY_SIZE - 1) + new one
+            local keep=$((HISTORY_SIZE - 1))
+            jsonfilter -i "$HISTORY_FILE" -a -e "@[$((count - keep)):]" 2>/dev/null > "${HISTORY_FILE}.tmp" || true
+            if [ -s "${HISTORY_FILE}.tmp" ]; then
+                mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
+            else
+                rm -f "${HISTORY_FILE}.tmp"
+            fi
+        fi
+    fi
+
+    # Append using simple sed approach (compatible with busybox)
+    if [ -f "$HISTORY_FILE" ] && [ "$(cat "$HISTORY_FILE" 2>/dev/null)" != "[]" ]; then
+        # Remove trailing ] and append
+        sed -i 's/\]$/,'"$(echo "$event" | sed 's/[&/\]/\\&/g')"']/' "$HISTORY_FILE" 2>/dev/null || \
+            echo "[$event]" > "$HISTORY_FILE"
+    else
+        echo "[$event]" > "$HISTORY_FILE"
+    fi
+}
+
+# Update status file with current state of a link
+update_status() {
+    local link_id="$1"
+    local link_name="$2"
+    local host="$3"
+    local method="$4"
+    local state="$5"
+    local latency="$6"
+    local last_change="$7"
+    local consecutive_fails="$8"
+    local ts=$(timestamp)
+
+    # Build per-link JSON
+    local link_json="{\"name\":\"$link_name\",\"host\":\"$host\",\"method\":\"$method\",\"state\":\"$state\",\"latency\":$latency,\"last_check\":$ts,\"last_change\":$last_change,\"consecutive_fails\":$consecutive_fails}"
+
+    # Write to individual status file per link (simpler than editing JSON)
+    echo "$link_json" > "$STATE_DIR/link_${link_id}.json"
+
+    # Rebuild combined status
+    local combined="{"
+    local first=1
+    for f in "$STATE_DIR"/link_*.json; do
+        [ -f "$f" ] || continue
+        local lid=$(basename "$f" .json | sed 's/link_//')
+        local content=$(cat "$f")
+        if [ "$first" = "1" ]; then
+            combined="${combined}\"${lid}\":${content}"
+            first=0
+        else
+            combined="${combined},\"${lid}\":${content}"
+        fi
+    done
+    combined="${combined}}"
+    echo "$combined" > "$STATUS_FILE"
+}
+
+# Main monitoring loop
+monitor_loop() {
+    log_msg "Link monitor daemon started (PID $$)"
+    echo $$ > "$PID_FILE"
+
+    # In-memory state tracking (shell variables)
+    # We use files in STATE_DIR for persistent tracking
+
+    while true; do
+        read_global_config
+
+        if [ "$GLOBAL_ENABLED" != "1" ]; then
+            sleep "$GLOBAL_INTERVAL"
+            continue
+        fi
+
+        local idx=0
+        while true; do
+            # Read link config
+            local lname=$(uci -q get "$CONF.@link[$idx].name")
+            [ -z "$lname" ] && break
+
+            local lenabled=$(uci -q get "$CONF.@link[$idx].enabled" || echo "1")
+            if [ "$lenabled" != "1" ]; then
+                idx=$((idx + 1))
+                continue
+            fi
+
+            local lhost=$(uci -q get "$CONF.@link[$idx].host")
+            local lmethod=$(uci -q get "$CONF.@link[$idx].method" || echo "ping")
+            local ltimeout=$(uci -q get "$CONF.@link[$idx].timeout" || echo "5")
+            local lretries=$(uci -q get "$CONF.@link[$idx].retries" || echo "3")
+            local linterval=$(uci -q get "$CONF.@link[$idx].interval" || echo "$GLOBAL_INTERVAL")
+
+            # Check if it's time to test this link
+            local last_check_file="$STATE_DIR/lastcheck_${idx}"
+            local now=$(timestamp)
+            if [ -f "$last_check_file" ]; then
+                local last_ts=$(cat "$last_check_file")
+                local elapsed=$((now - last_ts))
+                if [ "$elapsed" -lt "$linterval" ]; then
+                    idx=$((idx + 1))
+                    continue
+                fi
+            fi
+            echo "$now" > "$last_check_file"
+
+            # Execute check
+            local result=""
+            case "$lmethod" in
+                ping)
+                    result=$(do_ping_check "$lhost" "$ltimeout" "$lretries")
+                    ;;
+                http|https)
+                    result=$(do_http_check "$lhost" "$ltimeout")
+                    ;;
+                dns)
+                    result=$(do_dns_check "$lhost" "$ltimeout")
+                    ;;
+                *)
+                    result=$(do_ping_check "$lhost" "$ltimeout" "$lretries")
+                    ;;
+            esac
+
+            # Determine state
+            local new_state="up"
+            local latency=0
+            if [ "$result" = "fail" ]; then
+                new_state="down"
+                latency=0
+            else
+                latency="$result"
+            fi
+
+            # Read previous state
+            local prev_state_file="$STATE_DIR/prevstate_${idx}"
+            local prev_state="unknown"
+            [ -f "$prev_state_file" ] && prev_state=$(cat "$prev_state_file")
+
+            # Track consecutive fails
+            local fails_file="$STATE_DIR/fails_${idx}"
+            local consecutive_fails=0
+            [ -f "$fails_file" ] && consecutive_fails=$(cat "$fails_file")
+
+            if [ "$new_state" = "down" ]; then
+                consecutive_fails=$((consecutive_fails + 1))
+            else
+                consecutive_fails=0
+            fi
+            echo "$consecutive_fails" > "$fails_file"
+
+            # Track last state change time
+            local change_file="$STATE_DIR/lastchange_${idx}"
+            local last_change=$now
+            [ -f "$change_file" ] && last_change=$(cat "$change_file")
+
+            # State transition detection
+            if [ "$prev_state" != "$new_state" ] && [ "$prev_state" != "unknown" ]; then
+                echo "$now" > "$change_file"
+                last_change=$now
+                trigger_alerts "$lname" "$lhost" "$new_state" "$prev_state" "$latency"
+                add_history_event "$lname" "$lhost" "$new_state" "$latency"
+                log_msg "Link '$lname' ($lhost): $prev_state -> $new_state (latency: ${latency}ms)"
+            elif [ "$prev_state" = "unknown" ]; then
+                echo "$now" > "$change_file"
+                last_change=$now
+                add_history_event "$lname" "$lhost" "$new_state" "$latency"
+            fi
+
+            echo "$new_state" > "$prev_state_file"
+
+            # Update status
+            update_status "$idx" "$lname" "$lhost" "$lmethod" "$new_state" "$latency" "$last_change" "$consecutive_fails"
+
+            idx=$((idx + 1))
+        done
+
+        # Sleep the minimum global interval (individual links have their own timers)
+        sleep "$GLOBAL_INTERVAL"
+    done
+}
+
+# Handle signals
+trap 'log_msg "Link monitor daemon stopped"; rm -f "$PID_FILE"; exit 0' INT TERM
+
+# Start
+monitor_loop

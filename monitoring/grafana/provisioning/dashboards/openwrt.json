@@ -1,0 +1,212 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "id": 100,
+      "title": "Sistema",
+      "type": "row"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "s", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}}
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 1},
+      "id": 1,
+      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "openwrt_uptime_seconds", "legendFormat": "{{router}}"}],
+      "title": "Uptime",
+      "type": "stat"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "short", "max": 4, "min": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 2}, {"color": "red", "value": 3}]}}
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 1},
+      "id": 2,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "openwrt_load1", "legendFormat": "{{router}}"}],
+      "title": "CPU Load",
+      "type": "stat"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "celsius", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 60}, {"color": "red", "value": 75}]}}
+      },
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 1},
+      "id": 3,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "openwrt_temperature_celsius", "legendFormat": "{{router}}"}],
+      "title": "Temperatura",
+      "type": "stat"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "bytes", "thresholds": {"mode": "percentage", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 70}, {"color": "red", "value": 85}]}}
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 1},
+      "id": 4,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "openwrt_memory_bytes{type=\"used\"}", "legendFormat": "{{router}}"}],
+      "title": "RAM Usada",
+      "type": "stat"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 5000}, {"color": "red", "value": 10000}]}}
+      },
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 1},
+      "id": 5,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "openwrt_connections_total", "legendFormat": "{{router}}"}],
+      "title": "Conexiones",
+      "type": "stat"
+    },
+    {
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5},
+      "id": 101,
+      "title": "SQM/QoS CAKE",
+      "type": "row"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "short", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 20}}
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+      "id": 10,
+      "options": {"legend": {"displayMode": "table", "placement": "right"}},
+      "targets": [
+        {"expr": "rate(openwrt_cake_drops_total{wan=\"wan1\"}[1m])", "legendFormat": "WAN1 {{direction}}"},
+        {"expr": "rate(openwrt_cake_drops_total{wan=\"wan2\"}[1m])", "legendFormat": "WAN2 {{direction}}"}
+      ],
+      "title": "CAKE Drops/s",
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "µs", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10}}
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
+      "id": 11,
+      "options": {"legend": {"displayMode": "table", "placement": "right"}},
+      "targets": [
+        {"expr": "openwrt_cake_delay_us{wan=\"wan1\",direction=\"download\"}", "legendFormat": "WAN1 DL {{tin}}"},
+        {"expr": "openwrt_cake_delay_us{wan=\"wan1\",direction=\"upload\"}", "legendFormat": "WAN1 UL {{tin}}"}
+      ],
+      "title": "CAKE Delay - WAN1 (Telmex)",
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "Bps", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 20, "stacking": {"mode": "normal"}}}
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 14},
+      "id": 12,
+      "options": {"legend": {"displayMode": "table", "placement": "right"}},
+      "targets": [
+        {"expr": "rate(openwrt_cake_bytes_total{wan=\"wan1\",direction=\"download\"}[1m])", "legendFormat": "DL {{tin}}"},
+        {"expr": "-rate(openwrt_cake_bytes_total{wan=\"wan1\",direction=\"upload\"}[1m])", "legendFormat": "UL {{tin}}"}
+      ],
+      "title": "CAKE Traffic by Tin - WAN1 (Telmex)",
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "Bps", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 20, "stacking": {"mode": "normal"}}}
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 14},
+      "id": 13,
+      "options": {"legend": {"displayMode": "table", "placement": "right"}},
+      "targets": [
+        {"expr": "rate(openwrt_cake_bytes_total{wan=\"wan2\",direction=\"download\"}[1m])", "legendFormat": "DL {{tin}}"},
+        {"expr": "-rate(openwrt_cake_bytes_total{wan=\"wan2\",direction=\"upload\"}[1m])", "legendFormat": "UL {{tin}}"}
+      ],
+      "title": "CAKE Traffic by Tin - WAN2 (Megacable)",
+      "type": "timeseries"
+    },
+    {
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 22},
+      "id": 102,
+      "title": "WiFi",
+      "type": "row"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "short", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}}
+      },
+      "gridPos": {"h": 5, "w": 6, "x": 0, "y": 23},
+      "id": 20,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}},
+      "targets": [{"expr": "sum(openwrt_wifi_clients) by (router)", "legendFormat": "{{router}}"}],
+      "title": "Total WiFi Clients",
+      "type": "stat"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "short", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 20}}
+      },
+      "gridPos": {"h": 5, "w": 18, "x": 6, "y": 23},
+      "id": 21,
+      "options": {"legend": {"displayMode": "table", "placement": "right"}},
+      "targets": [
+        {"expr": "openwrt_wifi_clients{band=\"2.4GHz\"}", "legendFormat": "{{router}} 2.4GHz"},
+        {"expr": "openwrt_wifi_clients{band=\"5GHz\"}", "legendFormat": "{{router}} 5GHz"}
+      ],
+      "title": "WiFi Clients by Band",
+      "type": "timeseries"
+    },
+    {
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 28},
+      "id": 103,
+      "title": "Network Traffic",
+      "type": "row"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "Bps", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 20}}
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 29},
+      "id": 30,
+      "options": {"legend": {"displayMode": "table", "placement": "right"}},
+      "targets": [
+        {"expr": "rate(openwrt_network_bytes_total{interface=\"eth1\",direction=\"rx\"}[1m])", "legendFormat": "WAN1 RX"},
+        {"expr": "-rate(openwrt_network_bytes_total{interface=\"eth1\",direction=\"tx\"}[1m])", "legendFormat": "WAN1 TX"},
+        {"expr": "rate(openwrt_network_bytes_total{interface=\"lan5\",direction=\"rx\"}[1m])", "legendFormat": "WAN2 RX"},
+        {"expr": "-rate(openwrt_network_bytes_total{interface=\"lan5\",direction=\"tx\"}[1m])", "legendFormat": "WAN2 TX"}
+      ],
+      "title": "WAN Traffic",
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {"unit": "Bps", "custom": {"drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 20}}
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 29},
+      "id": 31,
+      "options": {"legend": {"displayMode": "table", "placement": "right"}},
+      "targets": [
+        {"expr": "rate(openwrt_network_bytes_total{interface=~\"br-lan.*\",direction=\"rx\"}[1m])", "legendFormat": "{{interface}} RX"},
+        {"expr": "-rate(openwrt_network_bytes_total{interface=~\"br-lan.*\",direction=\"tx\"}[1m])", "legendFormat": "{{interface}} TX"}
+      ],
+      "title": "LAN Traffic",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["openwrt", "network", "sqm"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "OpenWrt Network Dashboard",
+  "uid": "openwrt-main",
+  "version": 1
+}

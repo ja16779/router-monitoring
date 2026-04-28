@@ -1,0 +1,21 @@
+#!/bin/sh /etc/rc.common
+
+START=99
+STOP=10
+USE_PROCD=1
+
+start_service() {
+    mkdir -p /tmp/vmagent-data
+    procd_open_instance
+    procd_set_param command /usr/local/bin/vmagent \
+        -promscrape.config=/etc/vmagent/prometheus.yml \
+        -remoteWrite.url=https://prometheus-prod-13-prod-us-east-0.grafana.net/api/prom/push \
+        -remoteWrite.basicAuth.username=1533745 \
+        -remoteWrite.basicAuth.passwordFile=/etc/vmagent/api_key \
+        -remoteWrite.tmpDataPath=/tmp/vmagent-data \
+        -memory.allowedPercent=10
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_set_param respawn 3600 5 5
+    procd_close_instance
+}

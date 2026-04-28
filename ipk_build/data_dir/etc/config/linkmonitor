@@ -1,0 +1,58 @@
+config global 'global'
+	option enabled '1'
+	option interval '30'
+	option history_size '200'
+
+config link
+	option enabled '1'
+	option name 'WAN Gateway'
+	option host '8.8.8.8'
+	option method 'ping'
+	option interval '30'
+	option timeout '5'
+	option retries '3'
+
+config link
+	option enabled '1'
+	option name 'Cloudflare DNS'
+	option host '1.1.1.1'
+	option method 'ping'
+	option interval '60'
+	option timeout '5'
+	option retries '3'
+
+config link
+	option enabled '0'
+	option name 'Google HTTP'
+	option host 'https://www.google.com'
+	option method 'http'
+	option interval '120'
+	option timeout '10'
+
+config alert
+	option enabled '1'
+	option name 'System Log'
+	option type 'syslog'
+	option trigger 'both'
+
+config alert
+	option enabled '0'
+	option name 'Email Admin'
+	option type 'email'
+	option trigger 'both'
+	option recipient 'admin@example.com'
+	option subject_prefix '[LinkMonitor]'
+
+config alert
+	option enabled '0'
+	option name 'Custom Script'
+	option type 'script'
+	option trigger 'down'
+	option path '/usr/bin/linkmonitor-alert.sh'
+
+config alert
+	option enabled '0'
+	option name 'Webhook'
+	option type 'webhook'
+	option trigger 'both'
+	option url 'https://hooks.example.com/linkmonitor'

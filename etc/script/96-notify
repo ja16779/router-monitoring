@@ -1,0 +1,46 @@
+#!/bin/sh
+
+send_to_telegram() {
+    logger -p local0.info -t dhcp-join-notify "$1"
+    token="REDACTED_BOT_TOKEN"  # Replace with your Telegram Bot token
+    chat_id="716542586"  # Replace with your Telegram Chat ID
+    if [ -n "${token}" ] && [ -n "${chat_id}" ]; then
+        curl -s --data disable_notification="false" --data parse_mode="MarkdownV2" --data chat_id="$chat_id" \
+        --data-urlencode "text=$1" "https://api.telegram.org/bot${token}/sendMessage" > /dev/null
+    else
+        logger -p local0.info -t dhcp-join-notify "Error: Your Telegram chat_id or token is empty"
+    fi
+}
+
+logger -p local0.info -t dhcp-join-notify "WiFi Client Telegram Notification. Action: $ACTION"
+
+# Only process when a device is added or updated
+if [ "$ACTION" = "update" ] || [ "$ACTION" = "add" ]; then
+    # Look into the /tmp/dhcp.leases file to get device information
+    dhcp_leases_file="/tmp/dhcp.leases"
+    if [ -f "$dhcp_leases_file" ]; then
+        while IFS= read -r line; do
+            # Extract fields from the dhcp.leases file
+            epoch_time=$(echo "$line" | awk '{print $1}')
+            mac_address=$(echo "$line" | awk '{print $2}')
+            ip_address=$(echo "$line" | awk '{print $3}')
+            hostname=$(echo "$line" | awk '{print $4}')
+            
+            # Ensure hostname is not empty
+            [ -z "$hostname" ] && hostname="NOHOSTNAME"
+            
+            # Convert epoch to human-readable time
+            if echo "$epoch_time" | grep -qE '^[0-9]+$'; then
+                human_time=$(date -d @"$epoch_time" +"%Y-%m-%d %H:%M:%S")
+
+                # Prepare the message for Telegram
+                message="\#NewDevice JOINED the network:\n\`\`\`\nTime: $human_time\nHostname: $hostname\nIP Address: $ip_address\nMAC Address: $mac_address\n\`\`\`"
+
+                # Send the message to Telegram
+                send_to_telegram "$message"
+            fi
+        done < "$dhcp_leases_file"
+    else
+        logger -p local0.info -t dhcp-join-notify "Error: dhcp.leases file not found."
+    fi
+fi

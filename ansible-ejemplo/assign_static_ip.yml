@@ -1,0 +1,30 @@
+---
+# Ejemplo 2: Asignar IP estática a un dispositivo IoT
+# Uso: ansible-playbook -i inventory.ini assign_static_ip.yml \
+#        -e "mac=aa:bb:cc:dd:ee:ff ip=192.168.8.230 name=mi-dispositivo"
+
+- name: Asignar IP estática en DHCP del Flint-2
+  hosts: flint2
+  gather_facts: false
+
+  tasks:
+    - name: Verificar que se pasaron los parámetros
+      ansible.builtin.fail:
+        msg: "Uso: -e 'mac=XX:XX:XX:XX:XX:XX ip=192.168.8.X name=nombre'"
+      when: mac is not defined or ip is not defined or name is not defined
+
+    - name: Agregar reserva DHCP
+      ansible.builtin.raw: |
+        uci add dhcp host
+        uci set dhcp.@host[-1].mac='{{ mac }}'
+        uci set dhcp.@host[-1].ip='{{ ip }}'
+        uci set dhcp.@host[-1].name='{{ name }}'
+        uci commit dhcp
+        /etc/init.d/dnsmasq reload
+        echo "OK: {{ name }} ({{ mac }}) -> {{ ip }}"
+      register: resultado
+      changed_when: true
+
+    - name: Confirmar asignación
+      ansible.builtin.debug:
+        msg: "{{ resultado.stdout | trim }}"

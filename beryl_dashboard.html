@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Beryl AX Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 100%);
+            color: #fff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            font-size: 1.8em;
+            background: linear-gradient(90deg, #ff6b6b, #ffa502);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .header .subtitle {
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+        .status-dot {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+        .status-dot.online { background: #00ff88; box-shadow: 0 0 10px #00ff88; }
+        .status-dot.offline { background: #ff4757; box-shadow: 0 0 10px #ff4757; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .card.wide {
+            grid-column: span 2;
+        }
+        .card h2 {
+            font-size: 0.9em;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 15px;
+        }
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .metric:last-child { border-bottom: none; }
+        .metric-value {
+            font-size: 1.4em;
+            font-weight: 700;
+            color: #ffa502;
+        }
+        .metric-value.green { color: #00ff88; }
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 5px;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6b6b, #ffa502);
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+        .big-number {
+            font-size: 3em;
+            font-weight: 700;
+            text-align: center;
+            background: linear-gradient(90deg, #ff6b6b, #ffa502);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        /* Diagrama de conectividad */
+        .topology {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .device {
+            text-align: center;
+            padding: 15px;
+            border-radius: 12px;
+            min-width: 120px;
+        }
+        .device.flint {
+            background: linear-gradient(135deg, rgba(0,212,255,0.2), rgba(0,255,136,0.1));
+            border: 2px solid #00d4ff;
+        }
+        .device.beryl {
+            background: linear-gradient(135deg, rgba(255,107,107,0.2), rgba(255,165,2,0.1));
+            border: 2px solid #ffa502;
+        }
+        .device.internet {
+            background: linear-gradient(135deg, rgba(0,255,136,0.2), rgba(0,212,255,0.1));
+            border: 2px solid #00ff88;
+        }
+        .device-icon {
+            font-size: 2em;
+            margin-bottom: 5px;
+        }
+        .device-name {
+            font-weight: 600;
+            font-size: 0.9em;
+        }
+        .device-ip {
+            font-size: 0.75em;
+            color: #888;
+            margin-top: 3px;
+        }
+        .device-status {
+            font-size: 0.7em;
+            margin-top: 5px;
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+        .device-status.ok {
+            background: rgba(0,255,136,0.2);
+            color: #00ff88;
+        }
+        .device-status.fail {
+            background: rgba(255,71,87,0.2);
+            color: #ff4757;
+        }
+        .connection-line {
+            width: 60px;
+            height: 4px;
+            background: linear-gradient(90deg, #00d4ff, #00ff88);
+            border-radius: 2px;
+            position: relative;
+        }
+        .connection-line.active {
+            animation: flow 1s linear infinite;
+        }
+        .connection-line::after {
+            content: '';
+            position: absolute;
+            top: -8px;
+            right: -5px;
+            border: 6px solid transparent;
+            border-left-color: #00ff88;
+        }
+        @keyframes flow {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+        .latency-badge {
+            font-size: 0.7em;
+            color: #00ff88;
+            margin-top: -10px;
+            margin-bottom: 5px;
+        }
+        .client-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .client-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px;
+            margin: 5px 0;
+            background: rgba(255,255,255,0.03);
+            border-radius: 8px;
+            font-size: 0.85em;
+        }
+        .client-signal {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+        .signal-good { background: rgba(0,255,136,0.2); color: #00ff88; }
+        .signal-medium { background: rgba(255,165,2,0.2); color: #ffa502; }
+        .signal-weak { background: rgba(255,71,87,0.2); color: #ff4757; }
+        .band-tag {
+            font-size: 0.7em;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-left: 8px;
+            background: rgba(255,165,2,0.2);
+            color: #ffa502;
+        }
+        .traffic-values {
+            font-size: 0.85em;
+        }
+        .traffic-values .rx { color: #00ff88; }
+        .traffic-values .tx { color: #ffa502; }
+        .update-time {
+            text-align: center;
+            color: #666;
+            font-size: 0.8em;
+            margin-top: 20px;
+        }
+        @media (max-width: 600px) {
+            .card.wide { grid-column: span 1; }
+            .topology { flex-direction: column; }
+            .connection-line {
+                width: 4px;
+                height: 40px;
+            }
+            .connection-line::after {
+                top: auto;
+                bottom: -5px;
+                right: -8px;
+                border: 6px solid transparent;
+                border-top-color: #00ff88;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔶 BERYL AX</h1>
+        <p class="subtitle">Access Point Mode</p>
+        <p style="margin-top:10px"><span class="status-dot" id="inet-status"></span><span id="inet-text">Checking...</span></p>
+    </div>
+
+    <div class="grid">
+        <div class="card wide">
+            <h2>🔗 Topología de Red</h2>
+            <div class="topology">
+                <div class="device internet">
+                    <div class="device-icon">🌐</div>
+                    <div class="device-name">Internet</div>
+                    <div class="device-ip" id="inet-lat">--</div>
+                    <div class="device-status" id="inet-badge">...</div>
+                </div>
+                <div class="connection-line" id="line1"></div>
+                <div class="device flint">
+                    <div class="device-icon">🖥️</div>
+                    <div class="device-name">Flint 2</div>
+                    <div class="device-ip">192.168.10.1</div>
+                    <div class="device-status" id="flint-badge">...</div>
+                </div>
+                <div>
+                    <div class="latency-badge" id="latency-display">--</div>
+                    <div class="connection-line" id="line2"></div>
+                </div>
+                <div class="device beryl">
+                    <div class="device-icon">📡</div>
+                    <div class="device-name">Beryl AX</div>
+                    <div class="device-ip">192.168.10.2</div>
+                    <div class="device-status ok">ACTIVO</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📊 Sistema</h2>
+            <div class="metric">
+                <span>Uptime</span>
+                <span class="metric-value" id="uptime">--</span>
+            </div>
+            <div class="metric">
+                <span>CPU Load</span>
+                <span class="metric-value" id="load">--</span>
+            </div>
+            <div class="metric">
+                <span>Temperatura</span>
+                <span class="metric-value" id="temp">--</span>
+            </div>
+            <div class="metric">
+                <span>RAM</span>
+                <span class="metric-value" id="ram">--</span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" id="ram-bar" style="width:0%"></div></div>
+        </div>
+
+        <div class="card">
+            <h2>👥 Clientes WiFi</h2>
+            <div class="big-number" id="total-clients">--</div>
+            <div class="metric">
+                <span>2.4 GHz</span>
+                <span class="metric-value green" id="wifi-2g">--</span>
+            </div>
+            <div class="metric">
+                <span>5 GHz</span>
+                <span class="metric-value green" id="wifi-5g">--</span>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📈 Tráfico LAN</h2>
+            <div class="metric">
+                <span>Descarga</span>
+                <span class="traffic-values rx" id="lan-rx">--</span>
+            </div>
+            <div class="metric">
+                <span>Subida</span>
+                <span class="traffic-values tx" id="lan-tx">--</span>
+            </div>
+        </div>
+
+        <div class="card wide">
+            <h2>📶 Clientes Conectados</h2>
+            <div class="client-list" id="wifi-list">
+                <p style="color:#666">Cargando...</p>
+            </div>
+        </div>
+    </div>
+
+    <p class="update-time">Actualizado: <span id="last-update">--</span></p>
+
+    <script>
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function formatUptime(seconds) {
+            const d = Math.floor(seconds / 86400);
+            const h = Math.floor((seconds % 86400) / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            if (d > 0) return d + 'd ' + h + 'h';
+            if (h > 0) return h + 'h ' + m + 'm';
+            return m + 'm';
+        }
+
+        function getSignalClass(signal) {
+            if (signal >= -50) return 'signal-good';
+            if (signal >= -70) return 'signal-medium';
+            return 'signal-weak';
+        }
+
+        function updateDashboard() {
+            fetch('/cgi-bin/beryl_api.sh')
+                .then(r => r.json())
+                .then(data => {
+                    // Sistema
+                    document.getElementById('uptime').textContent = formatUptime(data.system.uptime);
+                    document.getElementById('load').textContent = data.system.load;
+                    document.getElementById('temp').textContent = data.system.temp + '°C';
+                    document.getElementById('ram').textContent = data.system.mem_pct + '%';
+
+                    const ramBar = document.getElementById('ram-bar');
+                    ramBar.style.width = data.system.mem_pct + '%';
+
+                    // Internet status
+                    const inetDot = document.getElementById('inet-status');
+                    const inetText = document.getElementById('inet-text');
+                    const inetBadge = document.getElementById('inet-badge');
+                    const inetLat = document.getElementById('inet-lat');
+                    const line1 = document.getElementById('line1');
+                    inetDot.className = 'status-dot ' + (data.system.internet ? 'online' : 'offline');
+                    inetText.textContent = data.system.internet ? 'Online' : 'Offline';
+                    inetBadge.className = 'device-status ' + (data.system.internet ? 'ok' : 'fail');
+                    inetBadge.textContent = data.system.internet ? 'OK' : 'SIN CONEXIÓN';
+                    inetLat.textContent = data.system.inet_latency ? '🏓 ' + data.system.inet_latency + 'ms' : '--';
+                    line1.className = 'connection-line' + (data.system.internet ? ' active' : '');
+
+                    // Flint connectivity
+                    const flintBadge = document.getElementById('flint-badge');
+                    const line2 = document.getElementById('line2');
+                    const latencyDisplay = document.getElementById('latency-display');
+                    flintBadge.className = 'device-status ' + (data.connectivity.flint_ok ? 'ok' : 'fail');
+                    flintBadge.textContent = data.connectivity.flint_ok ? 'CONECTADO' : 'DESCONECTADO';
+                    line2.className = 'connection-line' + (data.connectivity.flint_ok ? ' active' : '');
+                    latencyDisplay.textContent = data.connectivity.latency !== '--' ? data.connectivity.latency : '--';
+
+                    // Clientes
+                    document.getElementById('total-clients').textContent = data.clients.wifi_total;
+                    document.getElementById('wifi-2g').textContent = data.clients.wifi_2g;
+                    document.getElementById('wifi-5g').textContent = data.clients.wifi_5g;
+
+                    // Tráfico
+                    document.getElementById('lan-rx').textContent = formatBytes(data.traffic.lan.rx);
+                    document.getElementById('lan-tx').textContent = formatBytes(data.traffic.lan.tx);
+
+                    // WiFi clients list
+                    const wifiList = document.getElementById('wifi-list');
+                    if (data.wifi_clients && data.wifi_clients.length > 0) {
+                        wifiList.innerHTML = data.wifi_clients.map(c => `
+                            <div class="client-item">
+                                <span>${c.mac.substring(0,11)}...<span class="band-tag">${c.band}</span></span>
+                                <span class="client-signal ${getSignalClass(c.signal)}">${c.signal} dBm</span>
+                            </div>
+                        `).join('');
+                    } else {
+                        wifiList.innerHTML = '<p style="color:#666">Sin clientes WiFi</p>';
+                    }
+
+                    document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+                })
+                .catch(err => console.error('Error:', err));
+        }
+
+        updateDashboard();
+        setInterval(updateDashboard, 3000);
+    </script>
+</body>
+</html>

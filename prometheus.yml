@@ -1,0 +1,21 @@
+global:
+  scrape_interval: 60s
+
+scrape_configs:
+  - job_name: flint2-gl-mt6000
+    static_configs:
+      - targets: ['127.0.0.1:9100']
+        labels:
+          instance: flint2-gl-mt6000
+          location: home
+          device: gl-mt6000
+
+  - job_name: flint2-router-metrics
+    scrape_interval: 30s
+    metrics_path: /cgi-bin-metrics/metrics
+    static_configs:
+      - targets: ['127.0.0.1:9101']
+        labels:
+          instance: flint2-gl-mt6000
+          location: home
+          device: gl-mt6000
