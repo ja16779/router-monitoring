@@ -248,7 +248,15 @@
       "Bash(chmod +x /home/ja16779/Desktop/Claude/.claude/skills/router-check/router-check.py)",
       "Bash(dig +short *)",
       "WebFetch(domain:help.nextdns.io)",
-      "WebFetch(domain:ip2location.com)"
+      "WebFetch(domain:ip2location.com)",
+      "Bash(cp /home/ja16779/.claude/projects/-home-ja16779-Desktop-Claude/memory/*.md memory/)",
+      "Bash(cp /home/ja16779/Desktop/Claude/.claude/skills/router-check/router-check.py skills/router-check/)",
+      "Bash(chmod +x /home/ja16779/Desktop/Claude/router-check-telegram.sh)",
+      "Bash(chmod +x /tmp/deploy_health_check.sh)",
+      "Bash(/tmp/deploy_health_check.sh)",
+      "WebFetch(domain:adguard-dns.io)",
+      "Bash(chmod +x /tmp/check_packages.sh)",
+      "WebFetch(domain:fantastic-packages.github.io)"
     ]
   }
 }

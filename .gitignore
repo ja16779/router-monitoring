@@ -26,3 +26,4 @@ credentials*
 # Temporary
 /tmp/
 /test-output/
+.blackboxcli/
