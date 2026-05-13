@@ -265,7 +265,8 @@
       "Bash(gcloud compute instances describe claude *)",
       "Bash(gcloud compute firewall-rules describe allow-prometheus-grafana *)",
       "Bash(gcloud compute instances add-tags claude *)",
-      "Bash(gcloud compute *)"
+      "Bash(gcloud compute *)",
+      "WebFetch(domain:192.168.10.1)"
     ]
   }
 }
