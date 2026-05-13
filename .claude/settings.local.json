@@ -264,7 +264,8 @@
       "Bash(gcloud compute firewall-rules update allow-prometheus-grafana *)",
       "Bash(gcloud compute instances describe claude *)",
       "Bash(gcloud compute firewall-rules describe allow-prometheus-grafana *)",
-      "Bash(gcloud compute instances add-tags claude *)"
+      "Bash(gcloud compute instances add-tags claude *)",
+      "Bash(gcloud compute *)"
     ]
   }
 }
