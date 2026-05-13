@@ -256,7 +256,15 @@
       "Bash(/tmp/deploy_health_check.sh)",
       "WebFetch(domain:adguard-dns.io)",
       "Bash(chmod +x /tmp/check_packages.sh)",
-      "WebFetch(domain:fantastic-packages.github.io)"
+      "WebFetch(domain:fantastic-packages.github.io)",
+      "WebFetch(domain:ja16779.grafana.net)",
+      "Bash(gcloud compute ssh claude *)",
+      "Bash(/home/ja16779/google-cloud-sdk/bin/gcloud compute *)",
+      "Bash(gcloud compute firewall-rules list *)",
+      "Bash(gcloud compute firewall-rules update allow-prometheus-grafana *)",
+      "Bash(gcloud compute instances describe claude *)",
+      "Bash(gcloud compute firewall-rules describe allow-prometheus-grafana *)",
+      "Bash(gcloud compute instances add-tags claude *)"
     ]
   }
 }

@@ -46,6 +46,7 @@ Performs a comprehensive health check of the home network routers and reports an
 11. **CPU**: verificar carga del sistema (load average) y uso de CPU
 12. **Errores en logs**: tailscale open-conn-track, MWAN3 failures, firewall drops, unbound errors
 13. **Scripts de monitoreo**: verificar que monitor_sistema.sh tenga delay aleatorio (evita falsos positivos de CPU >90%)
+14. **Speedtest horario**: speedtest_monitor.sh ejecutándose cada hora (cron líneas 7 y 17), umbrales 280 Mbps (Telmex/80%), 168 Mbps (Megacable/80%)
 
 ### Beryl
 1. **Servicios**: dnsmasq, dropbear, wifi
@@ -1341,6 +1342,105 @@ Megacable: 📥 210.1 Mbps  📤 209.7 Mbps  ⏱️ 2.9ms  ✅ OK
 
 ---
 
+## Speedtest Hourly Monitoring — v1 (nuevo, 2026-05-11)
+
+**Script**: `/usr/bin/monitor/speedtest_monitor.sh` (ejecutado vía cron cada hora)
+
+### Propósito
+Monitoreo continuo de velocidad de descarga en ambas WANs con alertas automáticas si cae por debajo del 80% de la velocidad esperada.
+
+### Cron Configuration
+```bash
+# Telmex (wan) — cada hora a minuto 7
+7 * * * * /usr/bin/monitor/speedtest_monitor.sh wan 80
+
+# Megacable (secondwan) — cada hora a minuto 17
+17 * * * * /usr/bin/monitor/speedtest_monitor.sh secondwan 80
+```
+
+**Frecuencia**: 24 ejecuciones diarias (cada hora) para cada WAN
+
+### Umbrales y Alertas
+
+| WAN | Velocidad esperada | 80% umbral | Alert | Acción |
+|-----|-------------------|-----------|-------|--------|
+| Telmex (wan) | 350 Mbps | 280 Mbps | 🔴 CRÍTICA | Envía notificación Telegram |
+| Megacable (secondwan) | 210 Mbps | 168 Mbps | 🔴 CRÍTICA | Envía notificación Telegram |
+
+### Flujo de Ejecución
+1. Ejecuta `speedtest_check.sh` para la interfaz (wan o secondwan)
+2. Parsea JSON output → extrae `download` en Mbps
+3. Calcula umbral: velocidad_esperada × (porcentaje / 100)
+4. Compara actual vs umbral
+5. Si actual < umbral → **Alerta Telegram 🔴**
+6. Registra resultado en log correspondiente
+
+### Ejemplo de Mensaje de Alerta (cuando cae por debajo)
+
+```
+🔴 SPEEDTEST ALERTA — Telmex
+⚠️ Velocidad baja
+📥 245 Mbps (umbral: 280 Mbps)
+⏱️ ping: 3.2ms
+🔗 https://www.speedtest.net/result/c/...
+🔴 Velocidad por debajo del 80% esperado
+```
+
+### Logs
+- **Telmex**: `/var/log/speedtest_monitor_wan.log`
+- **Megacable**: `/var/log/speedtest_monitor_secondwan.log`
+
+Cada línea incluye timestamp UTC, velocidad detectada, umbral y estado (✅ OK o 🔴 ALERTA)
+
+### Configuración de Umbrales
+**Cambiar en cron:**
+```bash
+# Reducir a 75%
+7 * * * * /usr/bin/monitor/speedtest_monitor.sh wan 75
+
+# Aumentar a 90%
+7 * * * * /usr/bin/monitor/speedtest_monitor.sh wan 90
+```
+
+**Cambiar velocidad esperada:**
+Editar en `/usr/bin/monitor/speedtest_monitor.sh`:
+```bash
+WAN_SPEEDS_wan=350        # Cambiar a velocidad real esperada
+WAN_SPEEDS_secondwan=210  # Cambiar a velocidad real esperada
+```
+
+### Integración con Otros Sistemas
+- **speedtest_check.sh (v6+)**: Ejecuta speedtest real en failover/recovery desde `/etc/mwan3.user`
+- **speedtest_monitor.sh (v1)**: Monitoreo horario continuo desde cron
+- Ambos comparten binario `/etc/script/speedtest` y función `send_telegram()` desde `/etc/monitor/config.sh`
+
+### Troubleshooting
+
+| Problema | Causa | Solución |
+|----------|-------|----------|
+| Alertas frecuentes (>3/día) | ISP degradado o throttling | Revisar logs, contactar ISP, considerar reducir umbral |
+| No hay alertas | Cron no se ejecuta | Verificar crontab con `crontab -l` y revisar `/var/log/syslog` |
+| Speedtest falla ("TIMEOUT") | Red muy lenta | Aumentar timeout en speedtest_check.sh (línea TIMEOUT=120) |
+| Telegram no recibe alertas | config.sh sin función send_telegram | Verificar `/etc/monitor/config.sh` tiene función send_telegram |
+| Logs no se crean | Permisos insuficientes | Ejecutar `chmod 755 /usr/bin/monitor/speedtest_monitor.sh` |
+
+### Comandos de Verificación
+```bash
+# Ver última ejecución (Telmex)
+tail -5 /var/log/speedtest_monitor_wan.log
+
+# Ver última ejecución (Megacable)
+tail -5 /var/log/speedtest_monitor_secondwan.log
+
+# Ejecutar manualmente
+/usr/bin/monitor/speedtest_monitor.sh wan 80
+
+# Ver crontab activo
+crontab -l | grep speedtest_monitor
+```
+
+---
+
 ## WAN DNS Configuration (actualizado 2026-04-24)
 
 ### Configuración Actual
@@ -1401,6 +1501,19 @@ Dispositivo IoT → 192.168.8.1:53 (AGH)
 ---
 
 ## Changelog
+
+### v1.17.0 (2026-05-11)
+- **Speedtest Hourly Monitoring Service**: Nuevo servicio continuo de monitoreo de velocidad
+  - ✅ Script `/usr/bin/monitor/speedtest_monitor.sh` ejecutado 24 veces al día (cada hora)
+  - ✅ Alertas automáticas si velocidad cae por debajo del 80% del umbral esperado
+  - ✅ Umbrales: Telmex 280 Mbps (80% de 350), Megacable 168 Mbps (80% de 210)
+  - ✅ Cron configurado: `7 * * * * /usr/bin/monitor/speedtest_monitor.sh wan 80`
+  - ✅ Cron configurado: `17 * * * * /usr/bin/monitor/speedtest_monitor.sh secondwan 80`
+  - ✅ Logs separados: `/var/log/speedtest_monitor_wan.log` y `/var/log/speedtest_monitor_secondwan.log`
+  - ✅ Mensajes Telegram con 🔴 ALERTA cuando cae velocidad
+  - ✅ Parámetro de porcentaje editable (default 80%) para ajustar sensibilidad
+  - Documentación: Nueva sección "Speedtest Hourly Monitoring — v1" agregada
+  - Impacto: Detección inmediata de degradación de ISP (máximo 1 hora entre checks)
 
 ### v1.16.0 (2026-04-27)
 - **AdGuard Home — Puerto API Corregido**: Actualizado script para usar puerto correcto
