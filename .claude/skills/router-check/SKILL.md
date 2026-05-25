@@ -9,8 +9,9 @@ description: >
   Telegram notifications sent to group Flint2 notifications with topic prefixes.
   Automatic speedtest validation on WAN recovery. Includes verification of
   Threat Alert System (C2 IP blocking, anomaly detection, real-time threat monitoring),
-  Internet Detector WAN monitoring, and NextDNS quota tracking.
-version: 1.15.0
+  Internet Detector WAN monitoring, NextDNS quota tracking, and WiFi Client Connection
+  Hotplug Tracker (AP-STA events, real-time Telegram alerts with device info).
+version: 1.20.0
 disable-model-invocation: false
 ---
 
@@ -47,11 +48,24 @@ Performs a comprehensive health check of the home network routers and reports an
 12. **Errores en logs**: tailscale open-conn-track, MWAN3 failures, firewall drops, unbound errors
 13. **Scripts de monitoreo**: verificar que monitor_sistema.sh tenga delay aleatorio (evita falsos positivos de CPU >90%)
 14. **Speedtest horario**: speedtest_monitor.sh ejecutándose cada hora (cron líneas 7 y 17), umbrales 280 Mbps (Telmex/80%), 168 Mbps (Megacable/80%)
+15. **WiFi Hotplug Tracker**: Sistema event-driven captura AP-STA-CONNECTED/DISCONNECTED eventos
+    - **Procesos**: 5 instancias de `hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker` (uno per interfaz phy*-ap*)
+    - **Handler**: `/etc/hotplug.d/wifi/50-client-tracker` (script de 89 líneas) — resuelve hostname, SSID, IP, MAC, bitrate
+    - **Telegram**: Alertas instantáneas con formato HTML (hostname, SSID, IP, MAC, banda, bitrate/signal)
+    - **Log**: `/var/log/wifi_client_tracker.log` — eventos con timestamps
+    - **Persistencia**: Agregado a sysupgrade.conf para preservar post-upgrade
+    - **Status**: ✅ PRODUCTIVO — ambos eventos (CONNECT + DISCONNECT) capturados
 
 ### Beryl
 1. **Servicios**: dnsmasq, dropbear, wifi
 2. **Uptime y RAM**
 3. **Conectividad**: ping a 192.168.10.1
+4. **WiFi Hotplug Tracker**: Sistema event-driven identical a Flint-2
+    - **Procesos**: 5 instancias de `hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker` (phy0-ap0, phy0-ap2, phy1-ap0, wlan0-1, wlan1-1)
+    - **Interfaces**: 5 APs activos (2.4GHz: phy0-ap0, phy0-ap2, wlan0-1 | 5GHz: phy1-ap0, wlan1-1)
+    - **SSIDs monitoreadas**: 4 únicas (Mega_2.4G_A2DF, AXTEL XTREMO×2, IOT, Mega_5G_A2DF)
+    - **Telegram Token**: REDACTED_BOT_TOKEN (bot de Beryl)
+    - **Status**: ✅ OPERATIVO — Ambos eventos (CONNECT + DISCONNECT) capturados
 
 ## How to Execute
 
@@ -144,6 +158,14 @@ nft list chain inet fw4 forward_tailscale 2>&1 | grep -qE "eth1|lan1" && echo "F
 # Masquerade rules for exit node
 nft list chain inet fw4 srcnat 2>&1 | grep -qE "oifname \"eth1\".*iifname \"tailscale0\"" && echo "Masquerade rule (eth1): OK" || echo "Masquerade rule (eth1): MISSING"
 nft list chain inet fw4 srcnat 2>&1 | grep -qE "oifname \"lan1\".*iifname \"tailscale0\"" && echo "Masquerade rule (lan1): OK" || echo "Masquerade rule (lan1): MISSING"
+
+# WiFi Hotplug Tracker — AP-STA event monitoring
+echo "--- WiFi Hotplug Tracker ---"
+ps w | grep "hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker" | grep -v grep | wc -l | grep -q "5" && echo "Hostapd_cli processes: OK (5 running)" || echo "Hostapd_cli processes: CHECK - should be 5"
+[ -f /etc/hotplug.d/wifi/50-client-tracker ] && echo "Handler installed: OK" || echo "Handler installed: MISSING"
+[ -f /var/log/wifi_client_tracker.log ] && echo "Log file exists: OK" || echo "Log file exists: MISSING"
+tail -3 /var/log/wifi_client_tracker.log 2>/dev/null | grep -q "Event:" && echo "Recent events: OK" || echo "Recent events: NONE"
+grep -q "/etc/hotplug.d/wifi/50-client-tracker" /etc/sysupgrade.conf && echo "Persistence: OK" || echo "Persistence: NOT CONFIGURED"
 ```
 
 ## Commands to Run on Beryl
@@ -265,7 +287,7 @@ thread3.recursion.time.avg: 0.336ms
 TOTAL: 0.328ms ← EXCELENTE (vs 134ms inicial)
 
 Comando de verificación:
-unbound-control stats | grep "recursion.time"
+unbound-control stats_noreset | grep "recursion.time"
 ```
 
 ⚠️ **NOTA IMPORTANTE - AdGuardHome Dashboard Bug:**
@@ -297,7 +319,7 @@ ss -tlnp | grep ':5335'
 ls -lh /var/lib/unbound/*.zone
 
 # ¿Hit rate?
-unbound-control stats | grep -E "cachehits|cachemiss"
+unbound-control stats_noreset | grep -E "cachehits|cachemiss"
 
 # ¿AGH upstream activo?
 curl -s http://127.0.0.1:3000/control/status | grep running
@@ -332,13 +354,13 @@ grep "num-threads" /var/lib/unbound/unbound.conf
 # Debe ser: num-threads: 4
 
 # 3. ¿AGH conecta a Unbound?
-QUERIES_BEFORE=$(unbound-control stats | grep "^total.num.queries=" | awk -F= '{print $2}')
+QUERIES_BEFORE=$(unbound-control stats_noreset | grep "^total.num.queries=" | awk -F= '{print $2}')
 nslookup test.example.com 127.0.0.1:53 > /dev/null 2>&1
-QUERIES_AFTER=$(unbound-control stats | grep "^total.num.queries=" | awk -F= '{print $2}')
+QUERIES_AFTER=$(unbound-control stats_noreset | grep "^total.num.queries=" | awk -F= '{print $2}')
 [ $QUERIES_AFTER -gt $QUERIES_BEFORE ] && echo "✓ AGH conecta" || echo "✗ ujail bloqueando"
 
 # 4. ¿Cuál es la latencia real?
-unbound-control stats | grep "total.recursion.time.avg="
+unbound-control stats_noreset | grep "total.recursion.time.avg="
 # Esperar < 1ms para latencia buena
 ```
 
@@ -633,6 +655,179 @@ opkg update && opkg install usteer
 - `/etc/script/post_upgrade_flint2.sh`
 
 Para evitar reinstalación: `sed -i '/usteer/d' /etc/script/post_openwrt25.sh /etc/script/post_upgrade25.sh`
+
+## WiFi Hotplug Tracker — AP-STA Event Monitoring (nuevo, 2026-05-24)
+
+### Estado
+✅ **PRODUCTIVO** — Captura eventos de conexión/desconexión WiFi en tiempo real (2026-05-24 21:20 UTC)
+
+### Arquitectura
+
+```
+Dispositivo WiFi se conecta/desconecta
+    ↓
+hostapd genera AP-STA-CONNECTED / AP-STA-DISCONNECTED
+    ↓
+wpa_cli (en background vía hostapd_cli -B) captura evento
+    ↓
+Invoca handler: /etc/hotplug.d/wifi/50-client-tracker
+    ↓
+Handler (onhostchange.sh):
+  - Resuelve hostname (DHCP leases → "NONAME"/"Desconocido")
+  - Mapea interface phy*-ap* a SSID
+  - Obtiene IP y MAC desde DHCP
+  - Extrae bitrate vía iwinfo (CONNECT)
+  - Formatea HTML para Telegram
+  - Envía alerta
+  - Registra en /var/log/wifi_client_tracker.log
+```
+
+### Procesos en Ejecución
+
+**5 instancias activas de hostapd_cli:**
+```
+hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker -i phy0-ap0 -B  (IOT)
+hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker -i phy0-ap1 -B  (Mega_2.4G_A2DF)
+hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker -i phy0-ap2 -B  (AXTEL_XTREMO)
+hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker -i phy1-ap0 -B  (AXTEL_XTREMO 5GHz)
+hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker -i phy1-ap1 -B  (Mega_5G_A2DF)
+```
+
+### Interface Mappings
+
+| Interface | SSID | Band |
+|-----------|------|------|
+| phy0-ap0 | IOT | 2.4GHz |
+| phy0-ap1 | Mega_2.4G_A2DF | 2.4GHz |
+| phy0-ap2 | AXTEL_XTREMO | 2.4GHz |
+| phy1-ap0 | AXTEL_XTREMO | 5GHz |
+| phy1-ap1 | Mega_5G_A2DF | 5GHz |
+
+### Ejemplo de Alertas Telegram
+
+#### 📱 AP-STA-CONNECTED
+```
+#iPhone connected on #AXTEL_XTREMO
+
+Time: 2026-05-24 21:15:30
+Hostname: iPhone
+IP Address: 192.168.10.105
+MAC Address: ba:30:61:dc:19:6a
+ESSID: AXTEL_XTREMO
+BitRate: 867 Mbps
+```
+
+#### 🔌 AP-STA-DISCONNECTED
+```
+#iPhone disconnected from #AXTEL_XTREMO
+
+Time: 2026-05-24 21:12:34
+Hostname: iPhone
+IP Address: 192.168.10.105
+MAC Address: ba:30:61:dc:19:6a
+ESSID: AXTEL_XTREMO
+```
+
+### Archivo de Configuración
+
+**Flint-2:**
+- **Handler**: `/etc/hotplug.d/wifi/50-client-tracker` (phy*-ap* mappings)
+- **Service**: `/etc/init.d/wifi-client-tracker` (inicia 5 procesos hostapd_cli)
+- **Telegram Token**: REDACTED_BOT_TOKEN
+- **Chat ID**: 716542586 (Flint2 notifications group)
+
+**Beryl:**
+- **Handler**: `/etc/hotplug.d/wifi/50-client-tracker` (phy*-ap* + wlan* mappings)
+- **Service**: `/etc/init.d/wifi-client-tracker` (inicia 5 procesos hostapd_cli - MISMO que Flint-2)
+- **Watchdog**: `/usr/bin/monitor/wifi_client_tracker_watchdog_beryl.sh` (EXPECTED=5, no 2)
+- **Telegram Token**: REDACTED_BOT_TOKEN ✅ (bot de Beryl)
+- **Chat ID**: 716542586 (mismo grupo)
+
+**Log**: `/var/log/wifi_client_tracker.log` (eventos con timestamps)
+
+### Persistencia
+
+✅ Configurado en `/etc/sysupgrade.conf`:
+```
+/etc/hotplug.d/wifi/50-client-tracker
+/etc/init.d/wifi-client-tracker
+```
+
+Sobrevive a sysupgrade automáticamente.
+
+### Monitoreo en Tiempo Real
+
+```bash
+ssh root@192.168.10.1 'tail -f /var/log/wifi_client_tracker.log'
+```
+
+**Ejemplo de output:**
+```
+[2026-05-24 21:12:34] Event: interface=phy1-ap0 event=AP-STA-DISCONNECTED mac=ba:30:61:dc:19:6a
+[2026-05-24 21:12:34] DISCONNECT: iPhone (ba:30:61:dc:19:6a) from AXTEL_XTREMO
+[2026-05-24 21:15:30] Event: interface=phy1-ap0 event=AP-STA-CONNECTED mac=ba:30:61:dc:19:6a
+[2026-05-24 21:15:30] CONNECT: iPhone (ba:30:61:dc:19:6a) to AXTEL_XTREMO (BitRate: 867Mbps)
+```
+
+### Verificación
+
+```bash
+# ¿Procesos hostapd_cli activos?
+ps w | grep "hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker" | grep -v grep | wc -l
+# Debe retornar: 5
+
+# ¿Handler instalado?
+test -f /etc/hotplug.d/wifi/50-client-tracker && echo "OK" || echo "MISSING"
+
+# ¿Log escribiendo?
+tail -3 /var/log/wifi_client_tracker.log
+# Debe mostrar eventos recientes
+
+# ¿Persistencia configurada?
+grep -q "50-client-tracker" /etc/sysupgrade.conf && echo "OK" || echo "NOT CONFIGURED"
+```
+
+### Troubleshooting
+
+| Problema | Síntoma | Solución |
+|----------|---------|----------|
+| No hay eventos en log | Log vacío o sin actualizaciones recientes | Reiniciar service: `/etc/init.d/wifi-client-tracker restart` |
+| Solo DISCONNECT funciona | CONNECT no genera alertas | Verificar que handler usa `onhostchange.sh` correctamente |
+| Telegram no recibe alertas | No hay Telegram pero log muestra eventos | Verificar token y chat ID en handler |
+| Múltiples mensajes duplicados | Loop de mensajes para mismo evento | Verificar que no hay múltiples `hostapd_cli` para misma interfaz |
+
+### Configuración Beryl (GL-MT3000) — Diferencias
+
+**Topología igual a Flint-2 (5 interfaces):**
+
+| Interface | SSID | Band | Proceso |
+|-----------|------|------|---------|
+| phy0-ap0 | Mega_2.4G_A2DF | 2.4GHz | ✅ hostapd_cli |
+| phy0-ap2 | AXTEL XTREMO | 2.4GHz | ✅ hostapd_cli |
+| phy1-ap0 | AXTEL XTREMO | 5GHz | ✅ hostapd_cli |
+| wlan0-1 | IOT | 2.4GHz | ✅ hostapd_cli |
+| wlan1-1 | Mega_5G_A2DF | 5GHz | ✅ hostapd_cli |
+
+**Handler actualizado en Beryl (2026-05-24 22:30+):**
+- ✅ 5 interface mappings (phy*-ap* + wlan*)
+- ✅ Token correcto: `REDACTED_BOT_TOKEN`
+- ✅ Watchdog: EXPECTED=5 (no 2)
+- ✅ Service: inicia todos 5 procesos
+
+**Verificación en Beryl:**
+```bash
+# ¿5 procesos activos?
+ssh root@192.168.10.2 'ps w | grep "hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker" | grep -v grep | wc -l'
+# Debe retornar: 5
+
+# ¿Token configurado?
+ssh root@192.168.10.2 'grep TELEGRAM_TOKEN /etc/hotplug.d/wifi/50-client-tracker | head -1'
+# Debe mostrar: TELEGRAM_TOKEN="REDACTED_BOT_TOKEN"
+
+# ¿Procesos desglosados?
+ssh root@192.168.10.2 'ps w | grep "hostapd_cli" | grep -v grep'
+# Debe mostrar 5 líneas con phy0-ap0, phy0-ap2, phy1-ap0, wlan0-1, wlan1-1
+```
 
 ## Problema Conocido: Alertas de CPU Falsas
 
@@ -1760,6 +1955,24 @@ Dispositivo IoT → 192.168.8.1:53 (AGH)
 - Agregada verificación de delay aleatorio en `monitor_sistema.sh` (evita falsas alertas de CPU)
 - Agregado conteo de scripts en minuto 0 (detecta contención de cron)
 - Documentado problema conocido de alertas de CPU falsas por contención de cron
+
+### v1.20.0 (2026-05-24 22:30+)
+- **WiFi Hotplug Tracker Beryl**: Actualización y corrección de configuración
+  - Beryl: Corregida topología de 2→5 interfaces activas (phy0-ap0, phy0-ap2, phy1-ap0, wlan0-1, wlan1-1)
+  - Watchdog: Actualizado EXPECTED de 2→5 procesos en `wifi_client_tracker_watchdog_beryl.sh`
+  - Handler: Agregados 5 interface mappings completos (phy*-ap* + wlan*)
+  - **Telegram Token Beryl**: Actualizado a `REDACTED_BOT_TOKEN` ✅
+  - Service: Verificado que inicia 5 procesos en ambos routers (Flint-2 idéntico a Beryl)
+  - ✅ Sistema Beryl ahora operativo (5/5 procesos activos, alerts listos)
+
+### v1.19.0 (2026-05-24)
+- **WiFi Hotplug Tracker**: Sistema event-driven captura AP-STA-CONNECTED/DISCONNECTED eventos en tiempo real
+  - Handler simplificado (`onhostchange.sh`) con phy*-ap* interface support
+  - Telegram alerts instantáneas con hostname, SSID, IP, MAC, bitrate/signal
+  - 5 procesos hostapd_cli activos (uno per interfaz WiFi)
+  - Persistencia en sysupgrade.conf
+  - Log en `/var/log/wifi_client_tracker.log`
+  - ✅ Ambos eventos (CONNECT + DISCONNECT) capturados y operativos
 
 ### v1.0.0
 - Versión inicial con checks de servicios, MWAN3, Tailscale, WireGuard, AdGuard Home, temperatura, RAM, disco, WiFi

@@ -7,14 +7,15 @@ DHCP_LEASES="/tmp/dhcp.leases"
 TELEGRAM_TOKEN="REDACTED_BOT_TOKEN"
 TELEGRAM_CHAT_ID="716542586"
 
-# Mapeo de interfaces a ESSID
+# Mapeo de interfaces a ESSID (soporta ambos formatos: wlan* y phy*-ap*)
 get_essid() {
     case "$1" in
-        wlan0)   echo "IOT" ;;
-        wlan0-1) echo "Mega_2.4G_A2DF" ;;
-        wlan1)   echo "AXTEL XTREMO" ;;
-        wlan1-1) echo "Mega_5G_A2DF" ;;
-        *)       echo "Unknown"; return 1 ;;
+        wlan0|phy0-ap0)     echo "IOT" ;;
+        wlan0-1|phy0-ap1)   echo "Mega_2.4G_A2DF" ;;
+        wlan1|phy1-ap0)     echo "AXTEL_XTREMO" ;;
+        wlan1-1|phy1-ap1)   echo "Mega_5G_A2DF" ;;
+        phy0-ap2)           echo "AXTEL_XTREMO" ;;
+        *)                  echo "Unknown"; return 1 ;;
     esac
 }
 
