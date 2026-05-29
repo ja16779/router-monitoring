@@ -1,0 +1,44 @@
+#!/bin/sh /etc/rc.common
+# WiFi Client Tracker Service
+# Basado en chatgptwifinew.sh - simple y confiable
+
+START=99
+STOP=10
+
+HANDLER="/etc/hotplug.d/wifi/50-client-tracker"
+PIDFILE="/var/run/wifi_client_tracker.pid"
+
+# Interfaces to monitor (phy*-ap* format)
+INTERFACES="phy0-ap0 phy0-ap1 phy0-ap2 phy1-ap0 phy1-ap1"
+
+start() {
+    # Kill any existing processes
+    killall -9 hostapd_cli 2>/dev/null || true
+    sleep 1
+
+    # Start hostapd_cli with handler for each interface
+    # Exactly like chatgptwifinew.sh did
+    for iface in $INTERFACES; do
+        hostapd_cli -a "$HANDLER" -i "$iface" -B 2>/dev/null
+    done
+
+    sleep 1
+
+    # Save PIDs
+    pgrep hostapd_cli > "$PIDFILE" 2>/dev/null || echo "" > "$PIDFILE"
+}
+
+stop() {
+    killall hostapd_cli 2>/dev/null || true
+    rm -f "$PIDFILE"
+}
+
+restart() {
+    stop
+    sleep 1
+    start
+}
+
+reload() {
+    restart
+}

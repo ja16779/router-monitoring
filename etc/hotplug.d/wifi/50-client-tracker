@@ -1,0 +1,191 @@
+#!/bin/sh
+# WiFi Client Connection/Disconnection Tracker
+# Monitors AP-STA events using hostapd_cli
+# Sends Telegram alerts with full device information
+
+TELEGRAM_TOKEN="REDACTED_BOT_TOKEN"
+TELEGRAM_CHAT_ID="716542586"
+DHCP_LEASES="/tmp/dhcp.leases"
+ARP_TABLE="/proc/net/arp"
+LOG_FILE="/var/log/wifi_client_tracker.log"
+
+log_message() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
+}
+
+# Map interface to SSID info
+get_ssid_info() {
+    local iface="$1"
+    case "$iface" in
+        phy0-ap0) echo "IOT|2.4GHz" ;;
+        phy0-ap1) echo "Mega_2.4G|2.4GHz" ;;
+        phy0-ap2) echo "AXTEL_XTREMO|2.4GHz" ;;
+        phy1-ap0) echo "AXTEL_XTREMO|5GHz" ;;
+        phy1-ap1) echo "Mega_5G|5GHz" ;;
+        wlan0)    echo "IOT|2.4GHz" ;;
+        wlan0-1)  echo "Mega_2.4G|2.4GHz" ;;
+        wlan1)    echo "AXTEL_XTREMO|5GHz" ;;
+        wlan1-1)  echo "Mega_5G|5GHz" ;;
+        *)        echo "Unknown|Unknown" ;;
+    esac
+}
+
+# Resolve hostname from MAC
+resolve_hostname() {
+    local mac="$1"
+
+    # Try DHCP leases (format: timestamp mac ip hostname duid)
+    if [ -f "$DHCP_LEASES" ]; then
+        local hostname=$(awk -v mac="$mac" 'tolower($2)==tolower(mac) {print $4; exit}' "$DHCP_LEASES")
+        if [ -n "$hostname" ] && [ "$hostname" != "*" ]; then
+            echo "$hostname"
+            return 0
+        fi
+    fi
+
+    # Try ARP table (note: ARP table has IP, not hostname)
+    # Skip ARP lookup for hostname since it only contains IPs
+
+    echo "Desconocido"
+}
+
+# Get IP address
+get_ip_address() {
+    local mac="$1"
+
+    if [ -f "$DHCP_LEASES" ]; then
+        local ip=$(awk -v mac="$mac" 'tolower($1)==tolower(mac) {print $3; exit}' "$DHCP_LEASES")
+        if [ -n "$ip" ]; then
+            echo "$ip"
+            return 0
+        fi
+    fi
+
+    if [ -f "$ARP_TABLE" ]; then
+        local ip=$(awk -v mac="$mac" 'tolower($4)==tolower(mac) {print $1; exit}' "$ARP_TABLE")
+        if [ -n "$ip" ]; then
+            echo "$ip"
+            return 0
+        fi
+    fi
+
+    echo "Unknown"
+}
+
+# Extract signal strength
+get_signal_info() {
+    local iface="$1"
+    local mac="$2"
+
+    local iwinfo_out=$(iwinfo "$iface" assoclist 2>/dev/null | grep -i "$mac")
+
+    if [ -n "$iwinfo_out" ]; then
+        local signal_dbm=$(echo "$iwinfo_out" | grep -o "\-[0-9]*dBm" | sed 's/dBm//')
+
+        if [ -n "$signal_dbm" ]; then
+            local signal_pct=$((($signal_dbm + 100) * 2))
+            [ $signal_pct -lt 0 ] && signal_pct=0
+            [ $signal_pct -gt 100 ] && signal_pct=100
+            echo "${signal_dbm}dBm|${signal_pct}%"
+            return 0
+        fi
+    fi
+
+    echo "Unknown|Unknown"
+}
+
+# Get channel
+get_channel() {
+    local iface="$1"
+    local freq_out=$(iwinfo "$iface" info 2>/dev/null | grep -i frequency)
+
+    if [ -n "$freq_out" ]; then
+        echo "$freq_out" | awk '{print $(NF-1)}'
+    else
+        echo "Unknown"
+    fi
+}
+
+# Safe string
+sanitize_string() {
+    echo "$1" | sed 's/[^a-zA-Z0-9]//g'
+}
+
+# Send Telegram
+send_telegram() {
+    local message="$1"
+
+    if [ -z "$TELEGRAM_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+        log_message "ERROR: Telegram token or chat_id not configured"
+        return 1
+    fi
+
+    curl -s --max-time 10 \
+        --data-urlencode "text=$message" \
+        --data "disable_notification=false" \
+        --data "parse_mode=HTML" \
+        --data "chat_id=$TELEGRAM_CHAT_ID" \
+        "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" >/dev/null 2>&1
+}
+
+# Handle AP-STA event
+handle_event() {
+    local iface="$1"
+    local event="$2"
+    local mac="$3"
+
+    [ -z "$iface" ] || [ -z "$event" ] || [ -z "$mac" ] && return 1
+
+    log_message "Event: interface=$iface event=$event mac=$mac"
+
+    local ssid_info=$(get_ssid_info "$iface")
+    local ssid="${ssid_info%|*}"
+    local band="${ssid_info#*|}"
+    local hostname=$(resolve_hostname "$mac")
+    local ip=$(get_ip_address "$mac")
+    local safe_hostname=$(sanitize_string "$hostname")
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local channel=$(get_channel "$iface")
+
+    case "$event" in
+        AP-STA-CONNECTED)
+            local signal_info=$(get_signal_info "$iface" "$mac")
+            local signal="${signal_info%|*}"
+            local signal_pct="${signal_info#*|}"
+
+            local msg="<b>#${safe_hostname}</b> connected to <b>#${ssid}</b>
+<pre>
+🕐 Time: ${timestamp}
+🖥️  Hostname: ${hostname}
+📱 IP: ${ip}
+🔗 MAC: ${mac}
+📡 SSID: ${ssid}
+📶 Band: ${band}
+📊 Signal: ${signal} (${signal_pct})
+📍 Channel: ${channel}
+</pre>"
+
+            log_message "CONNECT: $hostname ($mac) to $ssid (Signal: $signal)"
+            send_telegram "$msg"
+            ;;
+
+        AP-STA-DISCONNECTED)
+            local msg="<b>#${safe_hostname}</b> disconnected from <b>#${ssid}</b>
+<pre>
+🕐 Time: ${timestamp}
+🖥️  Hostname: ${hostname}
+📱 IP: ${ip}
+🔗 MAC: ${mac}
+📡 SSID: ${ssid}
+</pre>"
+
+            log_message "DISCONNECT: $hostname ($mac) from $ssid"
+            send_telegram "$msg"
+            ;;
+    esac
+}
+
+# Process arguments from hostapd_cli
+if [ $# -eq 3 ]; then
+    handle_event "$@"
+fi

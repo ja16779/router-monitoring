@@ -1,0 +1,47 @@
+#!/bin/sh
+# WiFi Client Tracker — Persistence & Deployment
+# This script ensures the client tracker hotplug handler and service survive sysupgrade
+
+HANDLER_DEST="/etc/hotplug.d/wifi/50-client-tracker"
+SERVICE_DEST="/etc/init.d/wifi-client-tracker"
+HANDLER_SRC="/etc/uci-defaults/../hotplug.d/wifi/50-client-tracker"
+SERVICE_SRC="/etc/uci-defaults/../init.d/wifi-client-tracker"
+
+log() {
+    logger -p local0.info -t wifi-client-tracker-setup "$1"
+}
+
+# Create hotplug handler if missing
+if [ ! -f "$HANDLER_DEST" ]; then
+    mkdir -p "$(dirname "$HANDLER_DEST")"
+    if [ -f "$HANDLER_SRC" ]; then
+        cp "$HANDLER_SRC" "$HANDLER_DEST"
+        chmod +x "$HANDLER_DEST"
+        log "Deployed hotplug handler from backup"
+    else
+        log "WARNING: Handler source not found at $HANDLER_SRC"
+    fi
+fi
+
+# Create service if missing
+if [ ! -f "$SERVICE_DEST" ]; then
+    mkdir -p "$(dirname "$SERVICE_DEST")"
+    if [ -f "$SERVICE_SRC" ]; then
+        cp "$SERVICE_SRC" "$SERVICE_DEST"
+        chmod +x "$SERVICE_DEST"
+        log "Deployed init service from backup"
+    else
+        log "WARNING: Service source not found at $SERVICE_SRC"
+    fi
+fi
+
+# Enable service at boot
+if [ -f "$SERVICE_DEST" ]; then
+    "$SERVICE_DEST" enable 2>/dev/null
+    log "Service enabled at boot"
+fi
+
+# Create log directory
+mkdir -p /var/log
+
+exit 0

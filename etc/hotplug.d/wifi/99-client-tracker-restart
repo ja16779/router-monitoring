@@ -1,0 +1,11 @@
+#!/bin/sh
+# Reinicia WiFi Client Tracker cuando interfaces se resetean
+# Se ejecuta después de otros handlers de wifi (prioridad 99)
+
+[ "$ACTION" = "enable" ] || exit 0
+
+# Dar tiempo a que WiFi se reinicie
+sleep 2
+
+# Reiniciar los procesos
+/etc/init.d/wifi-client-tracker restart > /dev/null 2>&1
