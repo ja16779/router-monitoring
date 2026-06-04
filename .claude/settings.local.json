@@ -310,7 +310,8 @@
       "Bash(chmod +x /tmp/detailed_check.sh)",
       "Bash(/tmp/detailed_check.sh)",
       "Bash(chmod +x /tmp/final_audit.sh)",
-      "Bash(/tmp/final_audit.sh)"
+      "Bash(/tmp/final_audit.sh)",
+      "Bash(pkill -f check_beryl)"
     ]
   }
 }
