@@ -1,10 +1,9 @@
 #!/bin/sh
 # master_realtime.sh - Monitoreo en tiempo real (crítico)
-# Cron: * * * * * (cada minuto)
-# Contiene: presencia + monitor_internet/servicios/sistema/wa850/re220/beryl/crowdsec/healthcheck
+# Cron: */5 * * * * (cada 5 min)
+# Contiene: presencia + monitor_internet/servicios/sistema/wa850/re220/beryl/healthcheck
 #           + temp_alert/adguard_health/ddns (distribuidos en múltiples intervalos)
-
-set -u
+# v3: Fix if vacío en run_if_interval
 
 INTERVAL=$(date +%s)
 STATE_DIR="/tmp/monitor_super_realtime"
@@ -29,30 +28,36 @@ run_if_interval() {
 
     if [ "$elapsed" -ge "$interval" ]; then
         log_msg "INFO" "Ejecutando $name"
-        if sh -c "$cmd" >> "$LOG_FILE" 2>&1; then
+        if eval "$cmd" > /dev/null 2>&1; then
             echo "$INTERVAL" > "$last_file"
             log_msg "INFO" "$name: OK"
         else
-            log_msg "ERROR" "$name: Falló (exit: $?)"
+            local exit_code=$?
+            log_msg "ERROR" "$name: Falló (exit: $exit_code)"
         fi
     fi
 }
 
 log_msg "INFO" "=== Master Realtime iniciado ==="
 
+# Post-reboot notification (una vez por boot, no bloquea)
+[ ! -f "/tmp/reboot_notified" ] && /usr/bin/monitor/reboot_notify.sh &
+
 # ===== CADA 60 SEGUNDOS =====
-run_if_interval "presencia" 60 "/usr/bin/monitor/presencia.sh"
+# DESHABILITADO 2026-08-14: sistema legado, reemplazado por family_presence.sh (crontab cada minuto)
+# run_if_interval "presencia" 60 "/usr/bin/monitor/presencia.sh"
 
 # ===== CADA 300 SEGUNDOS (5 MINUTOS) =====
+run_if_interval "auto_restore" 300 "/usr/bin/monitor/auto_restore_detector.sh"
 run_if_interval "internet" 300 "/usr/bin/monitor/monitor_internet.sh"
 run_if_interval "servicios" 300 "/usr/bin/monitor/monitor_servicios.sh"
 run_if_interval "sistema" 300 "/usr/bin/monitor/monitor_sistema.sh"
 run_if_interval "wa850" 300 "/usr/bin/monitor/wa850_monitor.sh"
-run_if_interval "new_device" 300 "/usr/bin/monitor/new_device_alert.sh"
 run_if_interval "re220" 300 "/usr/bin/monitor/re220_monitor.sh"
-run_if_interval "crowdsec" 300 "/usr/bin/monitor/crowdsec_notify.sh"
 run_if_interval "healthcheck" 300 "/usr/bin/monitor/healthcheck_ping.sh"
 run_if_interval "beryl" 300 "/usr/bin/monitor/beryl_monitor.sh"
+# DESHABILITADO 2026-07-15 para diagnostico de reinicios diarios ~11:45 AM (ver si connectivity_watchdog era la causa)
+# run_if_interval "conn_watchdog" 300 "/usr/bin/monitor/connectivity_watchdog.sh"
 
 # ===== CADA 600 SEGUNDOS (10 MINUTOS) =====
 run_if_interval "temp" 600 "/usr/bin/monitor/temp_alert.sh"
