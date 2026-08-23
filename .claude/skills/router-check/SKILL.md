@@ -11,7 +11,7 @@ description: >
   Threat Alert System (C2 IP blocking, anomaly detection, real-time threat monitoring),
   Internet Detector WAN monitoring, NextDNS quota tracking, and WiFi Client Connection
   Hotplug Tracker (AP-STA events, real-time Telegram alerts with device info).
-version: 1.27.0
+version: 1.29.0
 disable-model-invocation: false
 ---
 
@@ -69,6 +69,7 @@ Si en el futuro se actualiza `paramiko` y se quiere reintentar, verificar primer
     - **Log**: `/var/log/wifi_client_tracker.log` — eventos con timestamps
     - **Persistencia**: Agregado a sysupgrade.conf para preservar post-upgrade
     - **Status**: ✅ PRODUCTIVO — ambos eventos (CONNECT + DISCONNECT) capturados
+16. **banIP**: `status: active`, `active_devices` debe cubrir AMBAS WANs (`eth1` + `pppoe-secondwan`), chains nft (`nft list table inet banIP | grep iifname`) sin ninguna interfaz activa faltante, contadores (`cnt_ctinvalid`, `cnt_udpflood`, etc.) > 0 y creciendo — ver sección "banIP — Cobertura Dual-WAN y validación detrás de NAT" más abajo para contexto completo (no instalado en Beryl, correcto)
 
 ### Beryl
 1. **Servicios**: dnsmasq, dropbear, wifi
@@ -178,11 +179,18 @@ nft list chain inet fw4 srcnat 2>&1 | grep -qE "oifname \"pppoe-secondwan\".*iif
 
 # WiFi Hotplug Tracker — AP-STA event monitoring
 echo "--- WiFi Hotplug Tracker ---"
-ps w | grep "hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker" | grep -v grep | wc -l | grep -q "5" && echo "Hostapd_cli processes: OK (5 running)" || echo "Hostapd_cli processes: CHECK - should be 5"
+ps w | grep "hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker" | grep -v grep | wc -l | grep -q "4" && echo "Hostapd_cli processes: OK (4 running)" || echo "Hostapd_cli processes: CHECK - should be 4"
 [ -f /etc/hotplug.d/wifi/50-client-tracker ] && echo "Handler installed: OK" || echo "Handler installed: MISSING"
 [ -f /var/log/wifi_client_tracker.log ] && echo "Log file exists: OK" || echo "Log file exists: MISSING"
 tail -3 /var/log/wifi_client_tracker.log 2>/dev/null | grep -q "Event:" && echo "Recent events: OK" || echo "Recent events: NONE"
 grep -q "/etc/hotplug.d/wifi/50-client-tracker" /etc/sysupgrade.conf && echo "Persistence: OK" || echo "Persistence: NOT CONFIGURED"
+
+# banIP — cobertura dual-WAN (ver sección "banIP — Cobertura Dual-WAN y validación detrás de NAT" para contexto)
+echo "--- banIP ---"
+/etc/init.d/banip status 2>&1 | grep -E "^\s*\+ status|^\s*\+ active_devices|^\s*\+ active_uplink"
+nft list table inet banIP 2>&1 | grep -m1 "iifname" | grep -q 'eth1' && echo "banIP cobertura Megacable (eth1): OK" || echo "banIP cobertura Megacable (eth1): MISSING — revisar ban_dev/ban_ifv4 y ban_autodetect"
+nft list table inet banIP 2>&1 | grep -m1 "iifname" | grep -q 'pppoe-secondwan' && echo "banIP cobertura Telmex (pppoe-secondwan): OK" || echo "banIP cobertura Telmex (pppoe-secondwan): MISSING"
+nft list counters inet banIP 2>&1
 ```
 
 ## Commands to Run on Beryl
@@ -801,7 +809,7 @@ ssh root@192.168.10.1 'tail -f /var/log/wifi_client_tracker.log'
 ```bash
 # ¿Procesos hostapd_cli activos?
 ps w | grep "hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker" | grep -v grep | wc -l
-# Debe retornar: 5
+# Debe retornar: 4 (phy0-ap2/AXTEL_XTREMO 2.4GHz deshabilitada desde 2026-04-24, ver Changelog v1.14.0/v1.25.0)
 
 # ¿Handler instalado?
 test -f /etc/hotplug.d/wifi/50-client-tracker && echo "OK" || echo "MISSING"
@@ -1881,6 +1889,12 @@ nft list counters inet banIP
 ---
 
 ## Changelog
+
+### v1.29.0 (2026-08-22) — Corrección residual: conteo hostapd_cli seguía en 5 en dos lugares
+- El fix de v1.25.0 (5→4 procesos hostapd_cli, tras deshabilitar AXTEL_XTREMO 2.4GHz) no se aplicó completo: el bloque principal "Commands to Run on Flint-2" (chequeo de WiFi Hotplug Tracker) y la sección de verificación de Flint-2 en "WiFi Hotplug Tracker" seguían esperando 5, pese a que el changelog decía "corregido en ambos routers". Detectado al agregar el chequeo de banIP a este mismo archivo. Corregido a 4 en ambos puntos.
+
+### v1.28.0 (2026-08-22) — banIP integrado al chequeo de rutina
+- **Agregado a la lista de verificación de Flint-2** (ítem 16) y a "Commands to Run on Flint-2": confirma `status: active`, que `active_devices` cubra ambas WANs (`eth1` + `pppoe-secondwan`), que las chains nft no tengan ninguna interfaz faltante, y muestra los contadores de tráfico real bloqueado. Antes no formaba parte del chequeo estándar — el gap de cobertura de Megacable (ver v1.27.0) solo se detectó porque el usuario pidió revisarlo puntualmente, no lo habría señalado un router-check de rutina.
 
 ### v1.27.0 (2026-08-22) — banIP: cobertura dual-WAN y validación detrás de NAT
 - **Nueva sección "banIP — Cobertura Dual-WAN y validación detrás de NAT"**: banip solo protegía Telmex (`secondwan`) desde el swap de WANs de julio; Megacable (`wan`/`eth1`) quedaba sin ninguna protección. Extendido a ambas interfaces — requirió desactivar `ban_autodetect` (revertía la lista manual en cada reload) y un `restart` completo (`reload` no regenera las chains nft).
