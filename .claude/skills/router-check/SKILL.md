@@ -11,7 +11,7 @@ description: >
   Threat Alert System (C2 IP blocking, anomaly detection, real-time threat monitoring),
   Internet Detector WAN monitoring, NextDNS quota tracking, and WiFi Client Connection
   Hotplug Tracker (AP-STA events, real-time Telegram alerts with device info).
-version: 1.20.0
+version: 1.24.0
 disable-model-invocation: false
 ---
 
@@ -26,13 +26,27 @@ Performs a comprehensive health check of the home network routers and reports an
 | Flint-2 (GL-MT6000) | 192.168.10.1 or 192.168.8.1 | 100.126.168.103 | root/admin |
 | Beryl (GL-MT3000) | 192.168.10.2 | — | root/admin |
 
-- SSH via Python Paramiko (password auth: root/admin)
+- SSH via Python Paramiko (password auth: root/admin) — **excepto Beryl, ver nota abajo**
 - Primary access: 192.168.10.1 (más estable) o 192.168.8.1
+
+### ⚠️ Beryl requiere `sshpass`+`ssh` nativo, NO Paramiko (2026-07-07)
+
+`paramiko` (probado v4.0.0) se cuelga indefinidamente al negociar KEX con el `dropbear` de Beryl — la conexión TCP abre pero el handshake nunca progresa hasta que el propio timeout de paramiko lo aborta (`AuthenticationException: Authentication timeout`, con `0 fails` en el log de dropbear — nunca llega a enviar ni la contraseña). Causa probable: dropbear de Beryl anuncia `sntrup761x25519-sha512` (KEX post-cuántico) como primer algoritmo en su KEXINIT, y paramiko 4.0.0 no lo negocia correctamente. El cliente OpenSSH nativo sí lo maneja sin problema (conecta en ~0.2s). Flint-2 no tiene este problema con paramiko.
+
+**Usar siempre para Beryl:**
+```sh
+sshpass -p admin ssh -o StrictHostKeyChecking=no -o PubkeyAuthentication=no -o ConnectTimeout=8 root@192.168.10.2 'comando'
+```
+`PubkeyAuthentication=no` evita que intente primero las llaves del agente local (que no están autorizadas para el usuario local en Beryl, solo para Flint-2 vía su propia automatización) y pase directo a password, más rápido.
+
+Si en el futuro se actualiza `paramiko` y se quiere reintentar, verificar primero con `ssh -vvv root@192.168.10.2 exit` que no cuelgue.
+
+⚠️ **Nota 2026-08-10**: se observó por primera vez el mismo síntoma (`AuthenticationException: Authentication timeout`) con paramiko conectando a **Flint-2** (192.168.10.1), no solo a Beryl. El SSH nativo (`sshpass`+`ssh`) conectó normalmente en ese mismo momento (~0.15s), así que no fue un problema de red/router — parece ser un fallo intermitente de paramiko, no exclusivo de Beryl. Si vuelve a ocurrir en Flint-2, usar el mismo fallback de `sshpass`+`ssh` nativo indicado arriba en lugar de reintentar paramiko repetidamente.
 
 ## What to Check
 
 ### Flint-2
-1. **Servicios críticos**: adguardhome, tailscaled, mwan3, dnsmasq, mdns-repeater (unbound activo, usteer desinstalado 2026-04-24)
+1. **Servicios críticos**: adguardhome, tailscaled, mwan3, dnsmasq, avahi-daemon (unbound activo, usteer desinstalado 2026-04-24; mdns-repeater reemplazado por avahi-daemon 2026-08-08, ver [[printer_iot_cross_vlan_access_20260808]] en memoria)
 2. **WiFi**: 5 SSIDs activas (2 de 2.4GHz, 2 de 5GHz, 1 IoT) — nueva SSID 2.4GHz agregada 2026-04-24
 3. **MWAN3**: ambas WANs online (wan + secondwan)
 4. **Tailscale**: BackendState=Running, ip rule 100.64.0.0/10, exit node advertiseded (0.0.0.0/0)
@@ -49,7 +63,7 @@ Performs a comprehensive health check of the home network routers and reports an
 13. **Scripts de monitoreo**: verificar que monitor_sistema.sh tenga delay aleatorio (evita falsos positivos de CPU >90%)
 14. **Speedtest horario**: speedtest_monitor.sh ejecutándose cada hora (cron líneas 7 y 17), umbrales 280 Mbps (Telmex/80%), 168 Mbps (Megacable/80%)
 15. **WiFi Hotplug Tracker**: Sistema event-driven captura AP-STA-CONNECTED/DISCONNECTED eventos
-    - **Procesos**: 5 instancias de `hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker` (uno per interfaz phy*-ap*)
+    - **Procesos**: 4 instancias de `hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker` (uno per interfaz phy*-ap* activa; AXTEL_XTREMO 2.4GHz/phy0-ap2 deshabilitada desde 2026-04-24, ver Changelog v1.14.0)
     - **Handler**: `/etc/hotplug.d/wifi/50-client-tracker` (script de 89 líneas) — resuelve hostname, SSID, IP, MAC, bitrate
     - **Telegram**: Alertas instantáneas con formato HTML (hostname, SSID, IP, MAC, banda, bitrate/signal)
     - **Log**: `/var/log/wifi_client_tracker.log` — eventos con timestamps
@@ -61,9 +75,9 @@ Performs a comprehensive health check of the home network routers and reports an
 2. **Uptime y RAM**
 3. **Conectividad**: ping a 192.168.10.1
 4. **WiFi Hotplug Tracker**: Sistema event-driven identical a Flint-2
-    - **Procesos**: 5 instancias de `hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker` (phy0-ap0, phy0-ap2, phy1-ap0, wlan0-1, wlan1-1)
-    - **Interfaces**: 5 APs activos (2.4GHz: phy0-ap0, phy0-ap2, wlan0-1 | 5GHz: phy1-ap0, wlan1-1)
-    - **SSIDs monitoreadas**: 4 únicas (Mega_2.4G_A2DF, AXTEL XTREMO×2, IOT, Mega_5G_A2DF)
+    - **Procesos**: 4 instancias de `hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker` (phy0-ap0, phy1-ap0, wlan0-1, wlan1-1 — phy0-ap2/AXTEL XTREMO 2.4GHz deshabilitada desde 2026-04-24, `wireless.wifinet4.disabled='1'`, confirmado 2026-08-14)
+    - **Interfaces**: 4 APs activos (2.4GHz: phy0-ap0, wlan0-1 | 5GHz: phy1-ap0, wlan1-1)
+    - **SSIDs monitoreadas**: 4 únicas (Mega_2.4G_A2DF, AXTEL XTREMO — solo 5GHz, IOT, Mega_5G_A2DF)
     - **Telegram Token**: REDACTED_BOT_TOKEN (bot de Beryl)
     - **Status**: ✅ OPERATIVO — Ambos eventos (CONNECT + DISCONNECT) capturados
 
@@ -84,7 +98,7 @@ output = stdout.read().decode()
 
 ```sh
 # Services
-for s in adguardhome tailscaled dnsmasq mdns-repeater; do
+for s in AdGuardHome tailscaled dnsmasq avahi-daemon; do
   echo -n "$s: "; pidof $s > /dev/null 2>&1 && echo "running" || echo "STOPPED"
 done
 
@@ -156,8 +170,11 @@ tailscale status --self 2>&1 | grep -q "offers exit node" && echo "Exit node: ad
 nft list chain inet fw4 forward_tailscale 2>&1 | grep -qE "eth1|lan1" && echo "Forward rule (TS→WAN): OK" || echo "Forward rule (TS→WAN): MISSING or INCORRECT (should have eth1, not pppoe-wan)"
 
 # Masquerade rules for exit node
+# Nota (2026-07-22): tras el swap de WANs (2026-07-07) la interfaz real de secondwan/Telmex
+# es "pppoe-secondwan" (l3_device), NO literal "lan1" — verificar con:
+#   ubus call network.interface.secondwan status | grep l3_device
 nft list chain inet fw4 srcnat 2>&1 | grep -qE "oifname \"eth1\".*iifname \"tailscale0\"" && echo "Masquerade rule (eth1): OK" || echo "Masquerade rule (eth1): MISSING"
-nft list chain inet fw4 srcnat 2>&1 | grep -qE "oifname \"lan1\".*iifname \"tailscale0\"" && echo "Masquerade rule (lan1): OK" || echo "Masquerade rule (lan1): MISSING"
+nft list chain inet fw4 srcnat 2>&1 | grep -qE "oifname \"pppoe-secondwan\".*iifname \"tailscale0\"" && echo "Masquerade rule (secondwan): OK" || echo "Masquerade rule (secondwan): MISSING"
 
 # WiFi Hotplug Tracker — AP-STA event monitoring
 echo "--- WiFi Hotplug Tracker ---"
@@ -195,7 +212,9 @@ ping -c 2 -W 2 192.168.10.1 > /dev/null 2>&1 && echo "Gateway: OK" || echo "Gate
 
 ## Timezone
 
-The router clocks run in **UTC**. The user is in **UTC-6 (Mexico City / CST)**. When referencing timestamps from querylog or logread, always convert to local time or note the UTC offset explicitly to avoid confusion.
+⚠️ **Actualizado 2026-08-10**: Flint-2 ya NO corre en UTC puro — tiene configurado `timezone='CST6'` / `zonename='America/Monterrey'` (`uci show system` lo confirma). `date` en el router ya devuelve hora local directamente (ej. `Mon Aug 10 21:44:11 CST 2026`), sin necesidad de conversión manual. `date -u` sigue disponible si se necesita UTC explícito. Verificar con `date; date -u` si hay dudas sobre qué hora está mostrando un log — no asumir que logread/querylog siempre está en UTC como en versiones anteriores de este documento.
+
+El usuario está en **UTC-6 (Ciudad de México / CST)**, que ahora coincide directamente con la hora del router. Confirmado 2026-08-10: **Beryl tiene la misma configuración** (`zonename='America/Monterrey'`) — ya no se necesita el offset de +6 al leer timestamps de logread/querylog en ninguno de los dos routers.
 
 ## Tailscale Exit Node (nuevo, 2026-04-05)
 
@@ -277,23 +296,27 @@ IoT VLAN (br-lan.8) → DHCP option 6: 45.90.28.0, 45.90.30.0 (NextDNS Anycast d
   - ⚠️ **Si valida aparece**: ejecutar `/usr/local/bin/unbound_validator_fix.sh`
 - `validator_ntp: 0` — **CRÍTICO**: permite que se generen las auth-zones en unbound.conf
 
-### Latencia DNS Actual (2026-04-24)
-```
-LATENCIA REAL (verificada):
-thread0.recursion.time.avg: 0.332ms
-thread1.recursion.time.avg: 0.238ms
-thread2.recursion.time.avg: 0.306ms
-thread3.recursion.time.avg: 0.336ms
-TOTAL: 0.328ms ← EXCELENTE (vs 134ms inicial)
+### Latencia DNS Actual (corregido 2026-07-24 — ver nota de unidades abajo)
 
-Comando de verificación:
+⚠️ **CORRECCIÓN CRÍTICA DE UNIDADES (2026-07-24)**: `total.recursion.time.avg` de `unbound-control` está en **SEGUNDOS**, no en milisegundos. Todas las entradas anteriores de este documento (y varias memorias) que citaban "0.328ms EXCELENTE" interpretaron mal el valor crudo — nunca se multiplicó ×1000 para convertir a ms. **Verificado empíricamente**: `time nslookup <dominio-no-cacheado> 127.0.0.1:5335` midió 100-140ms de reloj real, contra un valor crudo de `unbound-control` de `0.107` — coinciden en la misma escala solo si el valor crudo son segundos.
+
+```
+Ejemplo real (2026-07-24):
+unbound-control stats_noreset → total.recursion.time.avg=0.107270  (segundos)
+= 107ms de latencia real para resoluciones recursivas (cache miss)
+
+Para convertir correctamente: multiplicar el valor crudo × 1000 para obtener ms.
+```
+
+Comando de verificación (recordar la conversión ×1000):
+```sh
 unbound-control stats_noreset | grep "recursion.time"
+# El valor mostrado esta en SEGUNDOS — multiplicar x1000 para ms
 ```
 
-⚠️ **NOTA IMPORTANTE - AdGuardHome Dashboard Bug:**
-- AdGuardHome muestra "Average upstream response time" FALSO (10x más alto)
-- Es bug conocido #6818 - dashboard muestra 400ms+ pero latencia real es 0.3ms
-- IGNORAR la métrica del dashboard - usar comando anterior para verificar latencia real
+**Contexto**: `recursion.time.avg` mide solo las consultas que requieren resolución recursiva completa (cache miss, salida real a internet) — no es un promedio de TODAS las consultas. Las que sí pegan en caché siguen siendo prácticamente instantáneas. ~100-140ms para una resolución recursiva completa contra servidores autoritativos reales es razonable, no alarmante — solo que no es el "0.1ms" que se documentaba antes.
+
+⚠️ **NOTA REVISADA — AdGuardHome Dashboard "bug" #6818**: la entrada anterior de este documento usaba el valor mal interpretado (0.3ms) como "verdad" para descartar la métrica de latencia que muestra AdGuardHome (400ms+) como un bug falso. Con la corrección de unidades, la cifra de AGH está en el mismo orden de magnitud que la latencia real medida (~107ms), no 1000x distinta. **No se ha re-verificado si el bug #6818 sigue siendo real o no** — la comparación que lo "confirmaba" estaba basada en la cifra incorrecta. Tratar la afirmación "AGH muestra 10x más de lo real" con escepticismo hasta volver a verificar directamente.
 
 ### Auth-zones ICANN (descargan vía AXFR)
 ```
@@ -304,9 +327,12 @@ lax.xfr.dns.icann.org, iad.xfr.dns.icann.org
 ```
 
 ### Watchdog Unbound
+
+⚠️ **Actualizado 2026-08-10**: el cron real en Flint-2 es `*/5 * * * *` (cada 5 min), NO `* * * * *` (cada 1 min) como decía esta sección desde el fix de v1.11.0 (2026-04-17). Se detectó la regresión el 2026-08-10 y el usuario decidió explícitamente **dejarlo en 5 minutos** — no re-proponer volver a 1 minuto sin que lo pida.
+
 ```
-# /etc/crontabs/root — cada minuto (ventana máx 1 min si Unbound cae)
-* * * * *  [ -z "$(pidof unbound)" ] && /etc/init.d/unbound restart
+# /etc/crontabs/root — estado real confirmado 2026-08-10
+*/5 * * * *  pidof unbound > /dev/null 2>&1 || /etc/init.d/unbound restart > /dev/null 2>&1
 ```
 
 ### Verificación
@@ -361,7 +387,8 @@ QUERIES_AFTER=$(unbound-control stats_noreset | grep "^total.num.queries=" | awk
 
 # 4. ¿Cuál es la latencia real?
 unbound-control stats_noreset | grep "total.recursion.time.avg="
-# Esperar < 1ms para latencia buena
+# ⚠️ El valor esta en SEGUNDOS, no ms — multiplicar x1000 (ver sección "Latencia DNS Actual" arriba)
+# Esperar < 150-200ms para una resolución recursiva completa (cache miss) es razonable
 ```
 
 ## NextDNS Critical Domains Synchronization (nuevo, 2026-04-24)
@@ -684,14 +711,14 @@ Handler (onhostchange.sh):
 
 ### Procesos en Ejecución
 
-**5 instancias activas de hostapd_cli:**
+**4 instancias activas de hostapd_cli** (diseño original tenía 5; phy0-ap2/AXTEL_XTREMO 2.4GHz deshabilitada desde 2026-04-24, ver Changelog v1.14.0):
 ```
 hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker -i phy0-ap0 -B  (IOT)
 hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker -i phy0-ap1 -B  (Mega_2.4G_A2DF)
-hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker -i phy0-ap2 -B  (AXTEL_XTREMO)
 hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker -i phy1-ap0 -B  (AXTEL_XTREMO 5GHz)
 hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker -i phy1-ap1 -B  (Mega_5G_A2DF)
 ```
+Interfaz `phy0-ap2` (AXTEL_XTREMO 2.4GHz) no arranca proceso porque la SSID está deshabilitada (`wireless.wifinet4.disabled='1'`) — no es un fallo.
 
 ### Interface Mappings
 
@@ -732,14 +759,14 @@ ESSID: AXTEL_XTREMO
 
 **Flint-2:**
 - **Handler**: `/etc/hotplug.d/wifi/50-client-tracker` (phy*-ap* mappings)
-- **Service**: `/etc/init.d/wifi-client-tracker` (inicia 5 procesos hostapd_cli)
+- **Service**: `/etc/init.d/wifi-client-tracker` (inicia 4 procesos hostapd_cli — phy0-ap2 deshabilitada)
 - **Telegram Token**: REDACTED_BOT_TOKEN
 - **Chat ID**: 716542586 (Flint2 notifications group)
 
 **Beryl:**
 - **Handler**: `/etc/hotplug.d/wifi/50-client-tracker` (phy*-ap* + wlan* mappings)
-- **Service**: `/etc/init.d/wifi-client-tracker` (inicia 5 procesos hostapd_cli - MISMO que Flint-2)
-- **Watchdog**: `/usr/bin/monitor/wifi_client_tracker_watchdog_beryl.sh` (EXPECTED=5, no 2)
+- **Service**: `/etc/init.d/wifi-client-tracker` (inicia 4 procesos hostapd_cli - MISMO que Flint-2, phy0-ap2 deshabilitada)
+- **Watchdog**: `/usr/bin/monitor/wifi_client_tracker_watchdog_beryl.sh` (EXPECTED=4)
 - **Telegram Token**: REDACTED_BOT_TOKEN ✅ (bot de Beryl)
 - **Chat ID**: 716542586 (mismo grupo)
 
@@ -798,27 +825,27 @@ grep -q "50-client-tracker" /etc/sysupgrade.conf && echo "OK" || echo "NOT CONFI
 
 ### Configuración Beryl (GL-MT3000) — Diferencias
 
-**Topología igual a Flint-2 (5 interfaces):**
+**Topología (4 interfaces activas de 5 posibles — phy0-ap2/AXTEL XTREMO 2.4GHz deshabilitada desde 2026-04-24, `wireless.wifinet4.disabled='1'`, confirmado 2026-08-14):**
 
 | Interface | SSID | Band | Proceso |
 |-----------|------|------|---------|
 | phy0-ap0 | Mega_2.4G_A2DF | 2.4GHz | ✅ hostapd_cli |
-| phy0-ap2 | AXTEL XTREMO | 2.4GHz | ✅ hostapd_cli |
+| phy0-ap2 | AXTEL XTREMO | 2.4GHz | ❌ deshabilitada (no arranca proceso, esperado) |
 | phy1-ap0 | AXTEL XTREMO | 5GHz | ✅ hostapd_cli |
 | wlan0-1 | IOT | 2.4GHz | ✅ hostapd_cli |
 | wlan1-1 | Mega_5G_A2DF | 5GHz | ✅ hostapd_cli |
 
-**Handler actualizado en Beryl (2026-05-24 22:30+):**
-- ✅ 5 interface mappings (phy*-ap* + wlan*)
+**Handler en Beryl:**
+- ✅ 5 interface mappings definidos (phy*-ap* + wlan*), 4 arrancan proceso real
 - ✅ Token correcto: `REDACTED_BOT_TOKEN`
-- ✅ Watchdog: EXPECTED=5 (no 2)
-- ✅ Service: inicia todos 5 procesos
+- ✅ Watchdog: `EXPECTED=4` en `/usr/bin/monitor/wifi_client_tracker_watchdog_beryl.sh` (confirmado 2026-08-14, coincide con la topología real)
+- ✅ Service: inicia 4 procesos
 
 **Verificación en Beryl:**
 ```bash
-# ¿5 procesos activos?
+# ¿4 procesos activos?
 ssh root@192.168.10.2 'ps w | grep "hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker" | grep -v grep | wc -l'
-# Debe retornar: 5
+# Debe retornar: 4
 
 # ¿Token configurado?
 ssh root@192.168.10.2 'grep TELEGRAM_TOKEN /etc/hotplug.d/wifi/50-client-tracker | head -1'
@@ -826,7 +853,7 @@ ssh root@192.168.10.2 'grep TELEGRAM_TOKEN /etc/hotplug.d/wifi/50-client-tracker
 
 # ¿Procesos desglosados?
 ssh root@192.168.10.2 'ps w | grep "hostapd_cli" | grep -v grep'
-# Debe mostrar 5 líneas con phy0-ap0, phy0-ap2, phy1-ap0, wlan0-1, wlan1-1
+# Debe mostrar 4 líneas: phy0-ap0, phy1-ap0, wlan0-1, wlan1-1 (sin phy0-ap2)
 ```
 
 ## Problema Conocido: Alertas de CPU Falsas
@@ -1358,6 +1385,10 @@ ls -lh /mnt/usb/config-sync/ | head -20
 - **backup_new.sh**: Éxito/fallo de backups
   - Ejemplo: `[BACKUP] ✅ BACKUP COMPLETADO | 247MB`
 
+### mwan3_recovery_watchdog.sh (nuevo, encontrado 2026-08-10 — sin fecha de instalación conocida)
+
+Script en `/usr/bin/monitor/mwan3_recovery_watchdog.sh`, cron `*/2 * * * *` en Flint-2. Detecta WANs que se recuperaron sin que `failover_notify.sh` enviara la notificación de UP (ej. si el proceso que debía notificar murió o el evento se perdió) — revisa los archivos `/tmp/mwan3_down_wan` / `/tmp/mwan3_down_secondwan`, y si la interfaz ya está online en `mwan3 status` pero el archivo de downtime sigue presente por más de `MIN_RECOVERY_SECS=90`, llama a `failover_notify.sh "connected" "$INTERFACE"` para enviar el UP tardío y limpiar el archivo. No estaba documentado en este skill; se encontró funcionando correctamente durante el router-check del 2026-08-10.
+
 ---
 
 ## Internet Detector — WAN Monitoring (actualizado 2026-04-15)
@@ -1479,6 +1510,41 @@ mwan3 status
 
 ---
 
+## MWAN3 — Orden de reglas: `default_rule_v4` debe ir SIEMPRE al final (crítico, 2026-07-14)
+
+### Bug encontrado
+`default_rule_v4` (regla catch-all, `src_ip 0.0.0.0/0`, `sticky='1'`, política `balanced`) estaba físicamente **primera** en `/etc/config/mwan3` — antes de las reglas específicas `Mega` (`src_ip 192.168.100.0/24` → `wan_only`) y `Telmex` (`src_ip 189.0.0.0/8` → `wanb_only`). Como `default_rule_v4` hace match con cualquier IP origen y es sticky, atrapaba y cacheaba (600s, renovable en cada paquete) la política `balanced` para **todo tráfico nativo del router** (bindeado a la IP propia de una WAN, ej. speedtest, pings de salud, NTP) antes de que `Mega`/`Telmex` tuvieran oportunidad de aplicar — el orden de reglas en mwan3 importa porque cada regla en la cadena `mwan3_rules` solo actúa `mark match 0x0/0x3f00` (si el paquete aún no tiene marca).
+
+**Síntoma observado**: `speedtest -i <IP-de-eth1>` (bind explícito a la IP de Megacable) reportaba `isp: Telmex DSL` — el tráfico se fugaba por la WAN equivocada pese al bind correcto.
+
+**Diagnóstico**: comparar contadores reales, no solo el archivo de config:
+```sh
+iptables -t mangle -L mwan3_rules -n -v --line-numbers
+```
+Una regla no-sticky (`sticky='0'`) con **0 pkts/0 bytes permanentes** mientras `default_rule_v4` acumula miles de paquetes es la señal reveladora de este bug — no puede explicarse por caché sticky (no aplica a reglas `sticky=0`).
+
+### Fix aplicado
+```sh
+uci reorder mwan3.default_rule_v4=100   # clampa al final, tras todas las demás secciones
+uci commit mwan3
+mwan3 restart
+```
+Backup antes de tocar: `cp /etc/config/mwan3 /etc/config/mwan3.bak-<fecha>`.
+
+### Verificación post-fix
+```sh
+# Mega/Telmex deben aparecer ANTES que default_rule_v4 en la lista
+iptables -t mangle -L mwan3_rules -n -v --line-numbers | head -5
+
+# El archivo debe mostrar default_rule_v4 al final
+grep -n "^config rule" /etc/config/mwan3
+```
+
+### Regla general para futuras auditorías
+Si se agregan nuevas `config rule` vía `uci add`/`uci set`, **verificar el orden resultante** — cualquier regla con `src_ip`/`dest_ip` específico debe quedar ANTES de `default_rule_v4`/`default_rule_v6` en el archivo. `uci add` no garantiza esto automáticamente; revisar con `grep -n "^config rule" /etc/config/mwan3` tras cualquier cambio en reglas mwan3.
+
+---
+
 ## WiFi — Configuración 2.4GHz (actualizado 2026-04-17)
 
 ### Cambios aplicados en radio0 (2.4GHz)
@@ -1508,48 +1574,54 @@ iw dev phy0-ap1 station get d0:a0:bb:7d:9f:a8 | grep "tx bitrate"
 
 ---
 
-## Speedtest on WAN Recovery — v4 (actualizado 2026-04-17)
+## Speedtest on WAN Recovery — v12 (actualizado 2026-07-14)
 
 **Script**: `/usr/bin/monitor/speedtest_check.sh` (llamado desde `/etc/mwan3.user`)
 
-### Cambios v4 vs versiones anteriores
+⚠️ **Mapeo de WAN invertido desde 2026-07-07** (ver [[wan_interface_swap_20260707]] en memoria): `wan`=Megacable (`eth1`, DHCP), `secondwan`=Telmex (`pppoe-secondwan`, PPPoE). Las tablas de este documento reflejan el mapeo ACTUAL — si ves referencias antiguas a "Telmex (wan)" en logs viejos o backups, son de antes del swap.
 
-| Fix | Descripción |
-|-----|-------------|
-| **`-i $WAN_IP`** | Fuerza interfaz correcta → elimina crash `std::logic_error` con MWAN3 dual-WAN |
-| **`× 8 / 1,000,000`** | Conversión correcta bytes/s → Mbps (antes: daba 44 MB/s en lugar de 352 Mbps) |
-| **Retry logic** | Si falla → espera 30s y reintenta antes de reportar error |
-| **WAIT_TIME=60s** | Sube de 30s a 60s para dar tiempo a MWAN3 de estabilizar rutas |
-| **Upload + URL** | Mensaje Telegram ahora incluye velocidad de subida y enlace al resultado |
+### Thresholds y routing (post-swap, 2026-07-07)
+- **Megacable** (`wan` → `eth1` → 192.168.100.22): umbral 210 Mbps
+- **Telmex** (`secondwan` → `pppoe-secondwan` → 189.160.80.109): umbral 350 Mbps
 
-### Thresholds y routing
-- **Telmex** (wan → eth1 → 192.168.1.74): umbral 350 Mbps
-- **Megacable** (secondwan → lan1 → 192.168.100.26): umbral 210 Mbps
+### ⚠️ Flag correcto para bind por IP: `-i` minúscula, NO `-I` mayúscula (crítico, 2026-07-14)
 
-### Velocidades verificadas (2026-04-17)
+El binario Ookla (`/etc/script/speedtest`) tiene **dos flags distintos**:
+- `-I, --interface=ARG` — bind por **nombre de interfaz** (ej. `eth1`)
+- `-i, --ip=ARG` — bind por **IP** (ej. `192.168.100.22`)
+
+Usar `-I` con un valor de IP falla con `Failed binding local connection end (UnknownException)`. Usar `-i` con un nombre de interfaz no tiene sentido tampoco — cada flag espera su tipo de valor específico.
+
+**v11 y anteriores** bindeaban por **nombre de interfaz** (`-I "$WAN_DEV"`, ej. `-I eth1`) — esto causaba fallos intermitentes tipo `Network is unreachable` en curl/Ookla pese a que el paquete viajaba correctamente por el cable (confirmado con tcpdump: handshake TCP/TLS completo, pero la app reportaba fallo igual — problema a nivel de socket/kernel con `SO_BINDTODEVICE` en esta combinación de OpenWrt/mwan3, no root-cause por completo, pero reproducible).
+
+**v12 (actual)**: bindea por **IP** (`-i "$WAN_IP"`), obtenida vía `ip -4 addr show dev "$WAN_DEV"`. Esto por sí solo NO garantiza salir por la WAN correcta — ver la sección [MWAN3 — Orden de reglas](#mwan3--orden-de-reglas-default_rule_v4-debe-ir-siempre-al-final-critico-2026-07-14) arriba: bind por IP requiere que las reglas mwan3 (`Mega`/`Telmex` por `src_ip`) estén correctamente posicionadas ANTES de `default_rule_v4`, si no el tráfico se fuga a la otra WAN aunque el bind sea correcto.
+
+### Velocidades verificadas (2026-07-14, tras fix de orden mwan3 + flag -i)
 ```
-Telmex:    📥 352.6 Mbps  📤 361.0 Mbps  ⏱️ 2.9ms  ✅ OK
-Megacable: 📥 210.1 Mbps  📤 209.7 Mbps  ⏱️ 2.9ms  ✅ OK
+Megacable (wan):       📥 209.4 Mbps  vía eth1            ✅ OK (umbral 210)
+Telmex (secondwan):    📥 346-352 Mbps vía pppoe-secondwan ✅ OK (umbral 350)
 ```
 
-### Error conocido resuelto
-**`std::logic_error` crash**: Ocurre cuando el binario Ookla se ejecuta sin `-i` flag en sistema con MWAN3 activo — las tablas de routing en transición causan excepción en el binario C++. Solución: siempre pasar `-i $WAN_IP`.
+### Error conocido resuelto (histórico, pre-2026-07-07)
+**`std::logic_error` crash**: Ocurría cuando el binario Ookla se ejecutaba sin ningún flag de bind en sistema con MWAN3 activo — las tablas de routing en transición causaban excepción en el binario C++. Solución histórica: siempre pasar un flag de bind (`-I`/`-i`).
 
 ---
 
-## Speedtest Hourly Monitoring — v1 (nuevo, 2026-05-11)
+## Speedtest Hourly Monitoring — v4 (actualizado 2026-07-14)
 
 **Script**: `/usr/bin/monitor/speedtest_monitor.sh` (ejecutado vía cron cada hora)
+
+⚠️ **Mapeo de WAN post-swap 2026-07-07**: `wan`=Megacable (210 Mbps), `secondwan`=Telmex (350 Mbps) — ver nota de [[wan_interface_swap_20260707]] arriba en la sección de Speedtest on WAN Recovery.
 
 ### Propósito
 Monitoreo continuo de velocidad de descarga en ambas WANs con alertas automáticas si cae por debajo del 80% de la velocidad esperada.
 
 ### Cron Configuration
 ```bash
-# Telmex (wan) — cada hora a minuto 7
+# Megacable (wan) — cada hora a minuto 7
 7 * * * * /usr/bin/monitor/speedtest_monitor.sh wan 80
 
-# Megacable (secondwan) — cada hora a minuto 17
+# Telmex (secondwan) — cada hora a minuto 17
 17 * * * * /usr/bin/monitor/speedtest_monitor.sh secondwan 80
 ```
 
@@ -1559,8 +1631,11 @@ Monitoreo continuo de velocidad de descarga en ambas WANs con alertas automátic
 
 | WAN | Velocidad esperada | 80% umbral | Alert | Acción |
 |-----|-------------------|-----------|-------|--------|
-| Telmex (wan) | 350 Mbps | 280 Mbps | 🔴 CRÍTICA | Envía notificación Telegram |
-| Megacable (secondwan) | 210 Mbps | 168 Mbps | 🔴 CRÍTICA | Envía notificación Telegram |
+| Megacable (wan) | 210 Mbps | 168 Mbps | 🔴 CRÍTICA | Envía notificación Telegram |
+| Telmex (secondwan) | 350 Mbps | 280 Mbps | 🔴 CRÍTICA | Envía notificación Telegram |
+
+### v4 (2026-07-14) — fix crítico de binding
+Versiones anteriores (v3 y previas) bindeaban por **nombre de interfaz** (`-I "$WAN_DEV"`), lo cual fallaba intermitentemente con Ookla (`Network is unreachable` pese a que el tráfico viajaba bien por el cable). v4 agrega cálculo de `WAN_IP` y bindea con `-i "$WAN_IP"` (flag minúscula = bind por IP en Ookla CLI). Ver detalle completo en la sección "Speedtest on WAN Recovery" arriba — el fix de binding por sí solo no basta, también requirió corregir el orden de reglas en mwan3 (`default_rule_v4` atrapaba el tráfico antes que `Mega`/`Telmex`).
 
 ### Flujo de Ejecución
 1. Ejecuta `speedtest_check.sh` para la interfaz (wan o secondwan)
@@ -1695,7 +1770,111 @@ Dispositivo IoT → 192.168.8.1:53 (AGH)
 
 ---
 
+## Investigación de reinicios diarios ~11:45 AM (2026-07-15/16) — en curso
+
+### Síntoma reportado
+Usuario reportó que Flint-2 se reseteaba completamente (WiFi, LAN, luces del router — no solo un blip de WAN) todos los días cerca de las 11:45 AM.
+
+### Causa raíz encontrada y corregida: `keepalive` vestigial en `network.secondwan`
+Se encontró `network.secondwan.keepalive='10 6'` — **el mismo bug ya documentado y corregido el 2026-07-06** (ver [[mwan3_keepalive_loop_fix_20260706]] en memoria), pero reintroducido tras el swap de WANs del 2026-07-07: cuando Telmex PPPoE pasó de la sección `wan` a `secondwan`, la config de esa sección aparentemente se reconstruyó desde una plantilla/backup que todavía traía el `keepalive`, revirtiendo el fix original.
+
+Este `keepalive` hace que netifd reinicie agresivamente la interfaz si su chequeo interno la considera "no viva" — en el incidente original causaba que netifd matara `udhcpc` en loop; la hipótesis para el reinicio completo es que ese loop de reinicio de interfaz, si coincide con la carga pesada de otros crons (banIP reconstruyendo nftables, mwan3 pingueando, speedtest), puede trabar el sistema el tiempo suficiente para disparar el watchdog de hardware (mtk-wdt, timeout 31s) o el watchdog de software (procd, timeout 60s).
+
+**Fix aplicado (2026-07-15):**
+```sh
+cp /etc/config/network /etc/config/network.bak-20260715-keepalive-fix
+uci -q delete network.secondwan.keepalive
+uci commit network
+/etc/init.d/network reload
+```
+Verificado: `uci show network.secondwan | grep keepalive` y `uci show network.wan | grep keepalive` ambos vacíos (limpio en ambas interfaces).
+
+**Resultado (2026-07-16):** el router NO se reinició en la ventana de las 11:30-11:50 AM por primera vez desde que se empezó a investigar — señal fuerte de que el fix resolvió *ese* patrón específico. Sigue en observación.
+
+### Hallazgo nuevo, no relacionado: reinicio ~00:49 AM con hang previo de 72 minutos
+El 2026-07-16 se detectó un reinicio distinto (~00:49 AM), precedido por un hueco de **72 minutos sin ninguna entrada** en el log de diagnóstico (23:37 PM → 00:51 AM del día anterior) — mucho más que los timeouts configurados de watchdog (31-60s), sugiriendo que el sistema quedó colgado/no-responsivo antes del reset, no solo reiniciado limpio. Hipótesis sin confirmar: problema de montaje/I/O del USB (`/mnt/usb`) que bloquea procesos sin necesariamente tumbar el feed del watchdog de inmediato. **Sin investigar a fondo todavía** — distinto del patrón de las 11:45, requiere su propia investigación si se repite.
+
+### `connectivity_watchdog.sh` — DESHABILITADO temporalmente (2026-07-15, para aislar la prueba)
+Se comentó su invocación en `master_realtime.sh` (línea `run_if_interval "conn_watchdog" ...`) para descartarlo como causa mientras se probaba el fix del keepalive. **Nunca se había disparado realmente** (sin entradas "CRITICO"/"Ejecutando reboot" en ningún log histórico revisado), por lo que su desactivación es más una medida de aislamiento que una sospecha fuerte.
+
+**Estado actual: sigue deshabilitado.** Si vuelve a surgir un problema de conectividad real que amerite auto-reboot, reactivar con:
+```sh
+sed -i 's|^# run_if_interval "conn_watchdog"|run_if_interval "conn_watchdog"|; s|^# DESHABILITADO 2026-07-15.*$||' /usr/bin/monitor/master_realtime.sh
+```
+O simplemente descomentar manualmente la línea (respaldo intacto en `master_realtime.sh.bak-20260715-connwatchdog-test`).
+
+### `prereboot_diag.sh` — script de diagnóstico TEMPORAL (instalado 2026-07-15)
+Captura cada minuto (cron `* * * * *`) uptime, memoria, temperatura, estado de ambas WANs (`ifstatus wan`/`ifstatus secondwan`) y top de procesos — escribe **directo a `/mnt/usb/logs/prereboot_diag.log`** (no a `/tmp`/`/var`, que son tmpfs y se pierden en cada reset) para sobrevivir al próximo reinicio y poder ver los minutos justo antes del evento.
+
+- **Ubicación**: `/usr/bin/monitor/prereboot_diag.sh`
+- **Cron**: `* * * * * /usr/bin/monitor/prereboot_diag.sh` (entrada marcada "TEMPORAL" en `/etc/crontabs/root`)
+- **Log**: `/mnt/usb/logs/prereboot_diag.log`, auto-rotado a 100,000 líneas
+- **Cómo revisar un evento**: buscar el hueco/último timestamp antes del reinicio con `grep '^=== ' /mnt/usb/logs/prereboot_diag.log | tail -30`
+- **Para remover una vez diagnosticado** (agrega overhead de 1 corrida/minuto, no debe quedar indefinidamente):
+  ```sh
+  sed -i '/prereboot_diag.sh/d; /TEMPORAL - diagnostico reinicios/d' /etc/crontabs/root
+  /etc/init.d/cron restart
+  ```
+
+### `scheduled_reboot.sh` — reinicio mensual de mantenimiento (nuevo, 2026-07-15, permanente)
+No relacionado al bug — agregado a petición del usuario durante la misma sesión de investigación.
+
+- **Cron**: `0 4 1-7 * 0 /usr/bin/monitor/scheduled_reboot.sh` (primer domingo de cada mes, 04:00 CST — `1-7 * 0` es la única forma matemáticamente correcta de expresar "primer domingo" en cron estándar)
+- Envía aviso a Telegram antes de reiniciar (usa `/etc/monitor/config.sh`)
+- Backup del crontab original: `/etc/crontabs/root.bak-20260715`
+
+### Persistencia
+Todos los archivos nuevos/modificados (`master_realtime.sh`, `scheduled_reboot.sh`, `prereboot_diag.sh`, `/etc/crontabs/root`, `/etc/config/network`) ya están cubiertos por `sysupgrade.conf` (`/etc/crontabs/root` y todo `/usr/bin/monitor/` completo).
+
+---
+
 ## Changelog
+
+### v1.26.0 (2026-08-22) — Corrección chequeo de servicio: avahi-daemon reemplaza a mdns-repeater
+- **Chequeo de servicio corregido en Flint-2**: `mdns-repeater` fue reemplazado por `avahi-daemon` desde el fix del 2026-08-08 (ver [[printer_iot_cross_vlan_access_20260808]] en memoria — bug direccional de mdns-repeater). La skill seguía chequeando `mdns-repeater`, reportando `STOPPED` en cada router-check pese a que es el estado correcto y esperado desde entonces (falsa alarma detectada en el router-check del 2026-08-22). Corregido en la sección "Servicios críticos" y en el comando de verificación de servicios.
+
+### v1.25.0 (2026-08-14) — Corrección conteo WiFi Hotplug Tracker (5→4), Ford Ranger en presencia
+- **Conteo de procesos hostapd_cli corregido a 4 (era 5) en ambos routers**: la documentación seguía con el diseño original de 5 interfaces (previo a deshabilitar AXTEL XTREMO 2.4GHz el 2026-04-24 — ver v1.14.0), causando que un router-check leyera "4/5" como advertencia cuando en realidad es el estado correcto desde hace meses. Confirmado en vivo: `wireless.wifinet4.disabled='1'` en Flint-2 y Beryl (interfaz `phy0-ap2`), y el watchdog de Beryl ya tenía `EXPECTED=4` correctamente configurado (solo la doc estaba desactualizada, no el script).
+- **Sistema de presencia**: agregada Ford Ranger (identificada por hostname DHCP `SYNC`) a `family_devices.conf`. Sistema legado `presencia.sh` (llamado desde `master_realtime.sh`, lista de MACs embebida) desactivado — quedó `family_presence.sh` como único sistema activo. `presencia.sh` y el huérfano `family_presence_monitor.sh` renombrados a `.disabled` en el router (convención ya existente ahí) en vez de eliminados. No documentado como sección nueva en este skill por ser detalle de configuración, no de arquitectura — ver memoria del proyecto para el detalle completo.
+
+### v1.24.0 (2026-08-11) — RPS autocurativo (2 grupos), irqbalance/Beryl evaluados
+- **RPS regresó tras el reinicio del 08-09, alcance mayor al pensado**: no solo `eth0`/`eth1` — también las 4 interfaces WiFi (`phy0-ap0/1`, `phy1-ap0/1`, mask `2` en vez de `e`) y `tailscale0` (mask `0`, apagado, en vez de `e`). `lan1`/`br-lan` seguían bien.
+- **`rps_rfs_monitor.sh` reescrito**: ahora cubre dos grupos — `eth0/eth1/br-lan/lan1` → `f` (4 núcleos), `phy0-ap0/phy0-ap1/phy1-ap0/phy1-ap1/tailscale0` → `e` (núcleos 1,2,3, CPU0 libre para IRQs de hardware). Antes solo cubría el primer grupo.
+- **Cron cambiado de `--alert` a `--restore`**: el modo `--alert` (10 min) detectaba el problema pero nunca lo corregía — por eso se quedó roto en silencio desde el 08-09 hasta que se detectó manualmente el 08-11. `--restore` corrige activamente cada 10 min, y solo notifica por Telegram cuando de verdad tuvo que corregir algo (evita spam).
+- **Causa raíz**: sigue sin confirmación directa (dmesg rotó el historial de arranque), pero la hipótesis de `wed_enable` (parámetro del driver `mt7915e`) reinicializando las colas RX de las interfaces WiFi Y de eth0/eth1 (mismo pipeline de offload) ahora es más plausible al ver que afecta a interfaces que le pertenecen directamente al driver WiFi. Ver [[rps_regression_selfheal_20260811]] en memoria para el detalle completo.
+- **`irqbalance` evaluado y descartado**: presente en firmware pero deshabilitado por diseño (UCI `enabled=0`). CPU 96-97%+ idle en los 4 núcleos — sin saturación que justifique activarlo. RPS ya cubre la distribución de carga de red de forma más específica.
+- **Beryl evaluado y descartado**: corregido un supuesto propio erróneo — Beryl tiene 2 núcleos, no 4. RPS actual (`2`, un solo núcleo) sin desventaja medible (load ~0.06, ambos núcleos >98% idle, sin NAT/DPI). No se instaló el script de monitoreo ahí.
+
+### v1.23.0 (2026-08-10) — Router-check completo, timezone y hallazgos nuevos
+- **Timezone Flint-2 cambió a local**: ya NO es UTC puro, ahora `America/Monterrey` (CST6) — `date` devuelve hora local directamente. Ver sección "Timezone" actualizada.
+- **Nuevo script documentado**: `mwan3_recovery_watchdog.sh` (cron `*/2 * * * *`, Flint-2) — detecta WANs recuperadas sin notificación UP y la envía tardíamente. Ver sección "Notificaciones en Tiempo Real".
+- **Watchdog Unbound — regresión confirmada, aceptada por el usuario**: cron real es `*/5 * * * *`, no `* * * * *` (el fix de v1.11.0 se revirtió en algún punto, causa no identificada). Usuario decidió explícitamente dejarlo en 5 min — no re-proponer.
+- **Paramiko falló puntualmente en Flint-2** (`AuthenticationException: Authentication timeout`), mismo síntoma que el bug ya conocido de Beryl pero en el router que se creía inmune. SSH nativo conectó sin problema en el mismo momento — parece intermitente, no achacable al router. Ver nota agregada en la sección de Beryl/paramiko.
+- **Investigado y descartado como bug**: patrón de reinicio mensual (`scheduled_reboot.sh`, Flint-2) y semanal (`reboot.sh`, Beryl) — ambos scripts filtran correctamente por día de la semana internamente (no dependen solo del cron), confirmado leyendo su código fuente. No hay bug de OR dom+dow actualmente activo.
+- **Reinicio sin explicación en Flint-2**: boot registrado 2026-08-09 22:20 CST, sin volcado de pánico en pstore (reinicio limpio) y sin coincidir con ningún cron conocido. Causa no determinada por falta de retención de logs — queda como misterio abierto, similar al de julio 2026.
+
+### v1.22.0 (2026-07-15/16) — Investigación reinicios diarios ~11:45 AM
+- Ver sección completa "Investigación de reinicios diarios ~11:45 AM" arriba para el detalle. Resumen:
+  - ✅ Encontrado y corregido: `keepalive` vestigial en `network.secondwan` (regresión del bug de 2026-07-06, reintroducido por el swap de WANs del 07-07)
+  - ⚠️ `connectivity_watchdog.sh` deshabilitado temporalmente para aislar la prueba (nunca se había disparado, bajo riesgo)
+  - 🔧 Instalado `prereboot_diag.sh` (temporal, cron cada minuto, escribe a USB) para capturar evidencia en vivo del próximo evento
+  - 🆕 Agregado `scheduled_reboot.sh`: reinicio mensual de mantenimiento, primer domingo del mes 04:00 CST
+  - ✅ Confirmado 2026-07-16: sin reinicio en la ventana de las 11:30-11:50 AM (primera vez desde que se detectó el problema)
+  - ⚠️ Nuevo hallazgo sin resolver: reinicio ~00:49 AM del 07-16, precedido de hang de 72 min — posible problema de USB/I-O, pendiente de investigar
+
+### v1.21.0 (2026-07-14)
+- **MWAN3 — Bug crítico de orden de reglas corregido**: `default_rule_v4` estaba posicionada primera en `/etc/config/mwan3` (antes de `Mega`/`Telmex`), atrapando con su política `balanced` (sticky) todo el tráfico nativo del router antes de que las reglas específicas por `src_ip` pudieran aplicar.
+  - ✅ Confirmado con contadores reales: `iptables -t mangle -L mwan3_rules -n -v` mostraba `Mega`/`Telmex` en 0 pkts permanente mientras `default_rule_v4` acumulaba miles
+  - ✅ Fix: `uci reorder mwan3.default_rule_v4=100` (clampa al final) + `mwan3 restart`
+  - ✅ Nueva sección de skill: "MWAN3 — Orden de reglas" con diagnóstico y regla general para futuras auditorías
+  - Impacto: afectaba cualquier tráfico nativo del router bindeado a la IP de una WAN específica (no solo speedtest — potencialmente NTP, health-checks, scripts custom)
+- **Speedtest — flag de bind corregido (`-i` minúscula, no `-I` mayúscula)**: Ookla CLI tiene dos flags distintos (`-I`=nombre de interfaz, `-i`=IP). Versiones anteriores usaban `-I "$WAN_DEV"` (nombre de interfaz), causando fallos intermitentes (`Network is unreachable`) pese a que el paquete viajaba bien por el cable (confirmado con tcpdump).
+  - ✅ `speedtest_monitor.sh` v3→v4: agrega cálculo de `WAN_IP`, bind con `-i "$WAN_IP"`
+  - ✅ `speedtest_check.sh` v11→v12: ya calculaba `WAN_IP` pero bindeaba con `-I "$WAN_DEV"`; corregido a `-i "$WAN_IP"`
+  - ✅ Validado end-to-end en producción, ambas WANs: Megacable 209.4Mbps vía eth1, Telmex 346-352Mbps vía pppoe-secondwan
+  - Backups: `speedtest_monitor.sh.bak-20260714`, `speedtest_check.sh.bak-20260714`, `mwan3.bak-20260714`
+- **Documentación — mapeo WAN post-swap corregido**: secciones "Speedtest on WAN Recovery" y "Speedtest Hourly Monitoring" tenían el mapeo pre-swap (Telmex=wan/350, Megacable=secondwan/210) desactualizado desde la inversión del 2026-07-07. Corregido a wan=Megacable/210, secondwan=Telmex/350 en ambas secciones.
+- **AXTEL XTREMO 2.4GHz deshabilitada**: confirmado en ambos routers (`wireless.wifinet4.disabled='1'`) — WiFi Hotplug Tracker ahora corre con 4/5 procesos hostapd_cli como consecuencia esperada, no como fallo.
 
 ### v1.17.0 (2026-05-11)
 - **Speedtest Hourly Monitoring Service**: Nuevo servicio continuo de monitoreo de velocidad
