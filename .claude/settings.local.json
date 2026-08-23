@@ -443,7 +443,9 @@
       "Bash(sudo -n lshw -short -C memory)",
       "Bash(ollama list *)",
       "Bash(ollama --version)",
-      "WebFetch(domain:docs.gl-inet.com)"
+      "WebFetch(domain:docs.gl-inet.com)",
+      "Bash(xargs file)",
+      "Bash(hostnamectl)"
     ]
   }
 }

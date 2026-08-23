@@ -11,7 +11,7 @@ description: >
   Threat Alert System (C2 IP blocking, anomaly detection, real-time threat monitoring),
   Internet Detector WAN monitoring, NextDNS quota tracking, and WiFi Client Connection
   Hotplug Tracker (AP-STA events, real-time Telegram alerts with device info).
-version: 1.24.0
+version: 1.27.0
 disable-model-invocation: false
 ---
 
@@ -1828,7 +1828,64 @@ Todos los archivos nuevos/modificados (`master_realtime.sh`, `scheduled_reboot.s
 
 ---
 
+## banIP — Cobertura Dual-WAN y validación detrás de NAT (nuevo, 2026-08-22)
+
+### Estado
+✅ **ACTIVO en ambas WANs** (Telmex `secondwan` + Megacable `wan`/`eth1`) — Flint-2 únicamente. Beryl no lo tiene instalado (es solo AP, no WAN-facing, correcto que no lo necesite).
+
+### Hallazgo original: banip solo protegía Telmex
+Tras el swap de WANs de 2026-07-07 (ver sección "Speedtest on WAN Recovery" arriba), `ban_dev`/`ban_ifv4` de banip seguían apuntando únicamente a `pppoe-secondwan`/`secondwan` (Telmex). Todas las chains de banip (`pre-routing`, `wan-input`, `wan-forward`, `lan-forward`, `_reject`) arrancaban con `iifname != "pppoe-secondwan" accept` — cualquier tráfico que NO viniera de Telmex se aceptaba sin pasar por el blocklist. Megacable (`wan`/`eth1`) quedó sin ninguna protección de banip desde esa fecha.
+
+### Fix aplicado
+```sh
+uci add_list banip.global.ban_dev='eth1'
+uci add_list banip.global.ban_ifv4='wan'
+uci set banip.global.ban_autodetect='0'   # crítico, ver nota abajo
+uci commit banip
+/etc/init.d/banip restart                  # reload NO regenera las chains nft, hace falta restart completo
+```
+
+⚠️ **`ban_autodetect='1'` revierte cambios manuales en cada reload**: banip con autodetect activo está diseñado para single-WAN — en cada reload detecta "la" interfaz WAN activa y colapsa `ban_dev`/`ban_ifv4` a ese único valor, deshaciendo cualquier lista manual de múltiples interfaces. Para dual-WAN es obligatorio poner `ban_autodetect='0'` primero, y **después** agregar las interfaces a la lista (si se agregan antes de desactivar autodetect, el siguiente reload las borra).
+
+⚠️ **`/etc/init.d/banip reload` no basta** — solo un `restart` completo regenera las chains nft con la nueva lista de interfaces (`iifname != { "eth1", "pppoe-secondwan" } accept`). Verificar con:
+```sh
+nft list table inet banIP | grep -E "iifname|oifname"
+# Debe mostrar: iifname != { "eth1", "pppoe-secondwan" } accept  (no solo "pppoe-secondwan")
+```
+
+Backup de la config previa: `/etc/config/banip.bak-20260822-preextend`.
+
+### ⚠️ Importante: Megacable está detrás de NAT del ISP (CGNAT)
+`ubus call network.interface.wan status` muestra IP **privada** RFC1918 en la WAN (`192.168.100.22/24`) — Megacable no entrega IP pública, el router queda detrás del NAT del propio ISP. Telmex sí entrega IP pública real (`187.138.221.209/32`, PPPoE).
+
+Esto cambia el valor práctico de la protección según dirección de tráfico:
+
+| Dirección | Telmex (IP pública) | Megacable (detrás de NAT del ISP) |
+|---|---|---|
+| **Entrante** (`wan-input`/`wan-forward` — ataques/escaneos desde internet hacia el router) | Protección real y necesaria — expuesto directo a internet | Protección limitada — el NAT de Megacable ya absorbe la mayoría del ruido de escaneo antes de llegar al router (confirmado con `tcpdump -i eth1`: solo se ve tráfico de retorno de conexiones iniciadas por el propio router/LAN, no escaneos entrantes no solicitados) |
+| **Saliente** (`lan-forward` — dispositivos LAN conectándose a IPs maliciosas/C2 conocidas: feodo, binarydefense, dshield, firehol1) | Aplica igual | **Aplica igual, sin importar el NAT** — es la razón principal por la que vale la pena la extensión a Megacable: protege salida de dispositivos LAN comprometidos sin importar por cuál WAN salga el tráfico |
+
+**Conclusión al auditar banip en el futuro**: no basta con confirmar que está `active` y que los feeds tienen IPs cargadas (eso puede ser cierto y aun así estar protegiendo solo una WAN, como pasó aquí). Verificar explícitamente qué interfaces cubren las chains (`nft list table inet banIP | grep iifname`) contra el mapeo real de WANs vigente, y considerar el tipo de IP de cada WAN (pública vs RFC1918/CGNAT) al evaluar qué tan expuesta está esa interfaz a tráfico entrante real de internet.
+
+### Verificación rápida
+```sh
+/etc/init.d/banip status | grep -E "status|active_devices|active_uplink"
+# active_devices debe listar AMBAS interfaces (wan + secondwan / eth1 + pppoe-secondwan)
+# active_uplink debe mostrar ambas IPs (pública de Telmex + privada de Megacable)
+
+nft list counters inet banIP
+# cnt_ctinvalid, cnt_udpflood, cnt_synflood, cnt_icmpflood con valores > 0 y creciendo
+# confirma que el motor nft está evaluando tráfico real, no solo config cargada sin uso
+```
+
+---
+
 ## Changelog
+
+### v1.27.0 (2026-08-22) — banIP: cobertura dual-WAN y validación detrás de NAT
+- **Nueva sección "banIP — Cobertura Dual-WAN y validación detrás de NAT"**: banip solo protegía Telmex (`secondwan`) desde el swap de WANs de julio; Megacable (`wan`/`eth1`) quedaba sin ninguna protección. Extendido a ambas interfaces — requirió desactivar `ban_autodetect` (revertía la lista manual en cada reload) y un `restart` completo (`reload` no regenera las chains nft).
+- **Hallazgo clave agregado al proceso de auditoría**: Megacable entrega IP privada RFC1918 en la WAN (`192.168.100.22/24`, detrás de CGNAT del ISP), mientras Telmex da IP pública real. Esto limita el valor práctico de la protección *entrante* de banip en Megacable (el NAT del ISP ya filtra la mayoría del ruido de escaneo), pero la protección *saliente* (LAN→IPs maliciosas conocidas) aplica igual sin importar el NAT — es el beneficio real de la extensión.
+- **Regla general para futuras auditorías de banip**: no basta con confirmar `status: active` y feeds cargados — verificar explícitamente qué interfaces cubren las chains nft (`nft list table inet banIP | grep iifname`) contra el mapeo real de WANs vigente, y considerar el tipo de IP (pública vs CGNAT) de cada WAN al evaluar exposición real a tráfico entrante.
 
 ### v1.26.0 (2026-08-22) — Corrección chequeo de servicio: avahi-daemon reemplaza a mdns-repeater
 - **Chequeo de servicio corregido en Flint-2**: `mdns-repeater` fue reemplazado por `avahi-daemon` desde el fix del 2026-08-08 (ver [[printer_iot_cross_vlan_access_20260808]] en memoria — bug direccional de mdns-repeater). La skill seguía chequeando `mdns-repeater`, reportando `STOPPED` en cada router-check pese a que es el estado correcto y esperado desde entonces (falsa alarma detectada en el router-check del 2026-08-22). Corregido en la sección "Servicios críticos" y en el comando de verificación de servicios.
