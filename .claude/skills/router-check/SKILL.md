@@ -69,7 +69,7 @@ Si en el futuro se actualiza `paramiko` y se quiere reintentar, verificar primer
     - **Log**: `/var/log/wifi_client_tracker.log` — eventos con timestamps
     - **Persistencia**: Agregado a sysupgrade.conf para preservar post-upgrade
     - **Status**: ✅ PRODUCTIVO — ambos eventos (CONNECT + DISCONNECT) capturados
-16. **banIP**: `status: active`, `active_devices` debe cubrir AMBAS WANs (`eth1` + `pppoe-secondwan`), chains nft (`nft list table inet banIP | grep iifname`) sin ninguna interfaz activa faltante, contadores (`cnt_ctinvalid`, `cnt_udpflood`, etc.) > 0 y creciendo — ver sección "banIP — Cobertura Dual-WAN y validación detrás de NAT" más abajo para contexto completo (no instalado en Beryl, correcto)
+16. **banIP**: `status: active`, `active_devices` debe cubrir AMBAS WANs (`eth1` + `pppoe-secondwan`), `run_flags` con `count: ✔` (`ban_nftcount='1'`), chains nft (`nft list table inet banIP | grep iifname`) sin ninguna interfaz activa faltante. Los contadores de flood (`cnt_*`) en 0 son SANOS (no son señal de fallo — ver sección "Contadores en 0 NO significa roto"). Ver sección "banIP — Cobertura Dual-WAN y validación detrás de NAT" más abajo (no instalado en Beryl, correcto)
 17. **Dead man's switch (healthchecks.io)**: check "Flint-2" en `status: up` (`/usr/bin/monitor/healthcheck_ping.sh`, cron `*/5`) — ver sección "Dead Man's Switch — healthchecks.io" más abajo
 
 ### Beryl
@@ -187,12 +187,14 @@ ps w | grep "hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker" | grep -v gre
 tail -3 /var/log/wifi_client_tracker.log 2>/dev/null | grep -q "Event:" && echo "Recent events: OK" || echo "Recent events: NONE"
 grep -q "/etc/hotplug.d/wifi/50-client-tracker" /etc/sysupgrade.conf && echo "Persistence: OK" || echo "Persistence: NOT CONFIGURED"
 
-# banIP — cobertura dual-WAN (ver sección "banIP — Cobertura Dual-WAN y validación detrás de NAT" para contexto)
+# banIP — cobertura dual-WAN + conteo (ver sección "banIP — Cobertura Dual-WAN y validación detrás de NAT")
 echo "--- banIP ---"
-/etc/init.d/banip status 2>&1 | grep -E "^\s*\+ status|^\s*\+ active_devices|^\s*\+ active_uplink"
+/etc/init.d/banip status 2>&1 | grep -E "^\s*\+ status|^\s*\+ element_count|^\s*\+ active_devices|^\s*\+ active_uplink|^\s*\+ run_flags"
 nft list table inet banIP 2>&1 | grep -m1 "iifname" | grep -q 'eth1' && echo "banIP cobertura Megacable (eth1): OK" || echo "banIP cobertura Megacable (eth1): MISSING — revisar ban_dev/ban_ifv4 y ban_autodetect"
 nft list table inet banIP 2>&1 | grep -m1 "iifname" | grep -q 'pppoe-secondwan' && echo "banIP cobertura Telmex (pppoe-secondwan): OK" || echo "banIP cobertura Telmex (pppoe-secondwan): MISSING"
-nft list counters inet banIP 2>&1
+uci -q get banip.global.ban_nftcount | grep -q '^1$' && echo "banIP conteo por feed (ban_nftcount): ON" || echo "banIP conteo por feed: OFF (activar con uci set banip.global.ban_nftcount=1)"
+grep -q "^/etc/config/banip$" /etc/sysupgrade.conf && echo "banIP persistencia: OK" || echo "banIP persistencia: NOT CONFIGURED"
+/etc/init.d/banip report 2>&1 | sed -n '/^    Set /,/^    [0-9]/p'   # columnas Inbound/Outbound: "ON: N"; 0 es normal en red tranquila
 ```
 
 ## Commands to Run on Beryl
@@ -1979,20 +1981,56 @@ Esto cambia el valor práctico de la protección según dirección de tráfico:
 
 **Conclusión al auditar banip en el futuro**: no basta con confirmar que está `active` y que los feeds tienen IPs cargadas (eso puede ser cierto y aun así estar protegiendo solo una WAN, como pasó aquí). Verificar explícitamente qué interfaces cubren las chains (`nft list table inet banIP | grep iifname`) contra el mapeo real de WANs vigente, y considerar el tipo de IP de cada WAN (pública vs RFC1918/CGNAT) al evaluar qué tan expuesta está esa interfaz a tráfico entrante real de internet.
 
+### Contadores en 0 NO significa "roto" (verificado 2026-09-08)
+El usuario reportó "veo los contadores en 0, ¿está funcionando?". Sí funcionaba. Dos cosas distintas se confunden como "contadores":
+
+1. **Contadores de flood** (`cnt_ctinvalid`, `cnt_udpflood`, `cnt_synflood`, `cnt_icmpflood`, `cnt_tcpinvalid`, `cnt_bcp38`) — `nft list counters inet banIP`. En 0 = **estado sano esperado**: no hay tráfico de ataque/malformado. Megacable está detrás de CGNAT (el NAT del ISP absorbe el ruido de escaneo) y cuando Telmex está caído no pasa nada por ahí. **No esperes que crezcan en una red doméstica tranquila** — la doc anterior decía "> 0 y creciendo", incorrecto.
+2. **Contadores por feed** (columnas Inbound/Outbound del reporte) — solo existen si `ban_nftcount='1'`. Por default en 1.8.12 está en `0` (`run_flags: ... count: ✘`) → el reporte muestra `-` en esas columnas aunque haya drops. **Activado el 2026-09-08**: `uci set banip.global.ban_nftcount='1'; uci commit banip; /etc/init.d/banip restart`. Ahora cada regla de feed lleva `counter` y el reporte muestra paquetes bloqueados por feed y dirección, con la IP identificada. ⚠️ La opción es `ban_nftcount`, NO `ban_reportelements` (esa no existe en 1.8.12).
+
+**Prueba funcional definitiva** (probar que el bloqueo saliente realmente ocurre, sin depender de contadores acumulados):
+```sh
+# 1. IPs de un feed de C2 (feodo = Emotet/Dridex) — están en el set _outbound
+FEODO=$(nft list set inet banIP feodo.v4 | grep -oE "([0-9]+\.){3}[0-9]+" | head -1)
+# 2. contador temporal en la regla _outbound
+nft add counter inet banIP t_feodo
+nft insert rule inet banIP _outbound ip daddr @feodo.v4 counter name t_feodo
+# 3. generar tráfico desde un cliente LAN (Beryl) hacia esa IP
+sshpass -p admin ssh root@192.168.10.2 "ping -c 3 -W 2 $FEODO >/dev/null 2>&1; curl -s -m 3 http://$FEODO/ >/dev/null 2>&1"
+# 4. leer contador (debe ser > 0) y limpiar
+nft list counter inet banIP t_feodo
+nft delete rule inet banIP _outbound handle $(nft -a list chain inet banIP _outbound | grep t_feodo | grep -oE "handle [0-9]+" | awk '{print $2}')
+nft delete counter inet banIP t_feodo
+```
+⚠️ banip reconstruye su namespace nft en cada `ban_trigger` (evento de interfaz) — si Telmex/WAN está flapeando, un contador temporal puede ser borrado antes de que lo leas. Hacer los 4 pasos en una sola sesión SSH seguida.
+
+### Persistencia
+`/etc/config/banip` agregado explícitamente a `/etc/sysupgrade.conf` de Flint-2 el 2026-09-08 (antes solo dependía del respaldo por default de `/etc/config/`). Cubre `ban_dev`/`ban_ifv4` dual-WAN, `ban_autodetect='0'`, `ban_nftcount='1'`, `ban_blocklist`/`ban_allowlist`. Backup: `/etc/config/banip.bak-20260908-reportelements`.
+
 ### Verificación rápida
 ```sh
-/etc/init.d/banip status | grep -E "status|active_devices|active_uplink"
+/etc/init.d/banip status | grep -E "status|element_count|active_devices|active_uplink|run_flags"
 # active_devices debe listar AMBAS interfaces (wan + secondwan / eth1 + pppoe-secondwan)
 # active_uplink debe mostrar ambas IPs (pública de Telmex + privada de Megacable)
+# run_flags debe mostrar "count: ✔" (ban_nftcount activo desde 2026-09-08)
+
+/etc/init.d/banip report | sed -n '/^    Set /,/^    [0-9]/p'
+# columnas Inbound/Outbound muestran "ON: N" — N crece si algo matchea (0 es normal en red tranquila)
 
 nft list counters inet banIP
-# cnt_ctinvalid, cnt_udpflood, cnt_synflood, cnt_icmpflood con valores > 0 y creciendo
-# confirma que el motor nft está evaluando tráfico real, no solo config cargada sin uso
+# contadores de flood — 0 es SANO (ver "Contadores en 0 NO significa roto" arriba), no es señal de fallo
 ```
 
 ---
 
 ## Changelog
+
+### v1.31.0 (2026-09-08) — banIP: "contadores en 0" aclarado + `ban_nftcount` activado
+- El usuario reportó "veo los contadores en 0, ¿funciona? si no, desinstalar". **Sí funcionaba** — probado en vivo: 4 paquetes de un cliente LAN (Beryl) hacia IPs de C2 de Feodo interceptados por la chain `_outbound` en tiempo real. 4767 IPs en los sets nft, ambas WANs cubiertas, footprint 1 MB.
+- **Nueva subsección "Contadores en 0 NO significa roto"**: distingue los contadores de flood (`cnt_*`, en 0 = sano en red doméstica tras CGNAT — la doc anterior decía "> 0 y creciendo", incorrecto, corregido en el ítem 16 y en Verificación rápida) de los contadores por feed (columnas Inbound/Outbound, requieren `ban_nftcount='1'`).
+- **`ban_nftcount='1'` activado** (`uci set` + `restart`). La opción correcta en banIP 1.8.12 es `ban_nftcount`, NO `ban_reportelements` (no existe). Ahora cada regla de feed lleva `counter` y `/etc/init.d/banip report` muestra paquetes bloqueados por feed/dirección con la IP identificada.
+- **Prueba funcional documentada**: contador temporal en `_outbound` + tráfico desde Beryl hacia una IP de `feodo.v4` → leer y limpiar en la misma sesión SSH (banip borra el namespace nft en cada `ban_trigger`).
+- **`/etc/config/banip` agregado a `sysupgrade.conf` de Flint-2** (antes solo respaldo por default de `/etc/config/`).
+- Comando de rutina de banIP en "Commands to Run on Flint-2" ampliado: `element_count`, `run_flags`, chequeo de `ban_nftcount`, persistencia, y el reporte con columnas Inbound/Outbound en vez de `nft list counters` (que solo mostraba los flood counters en 0).
 
 ### v1.30.0 (2026-09-08) — internet-detector: bug de envío a Telegram + dead man's switch en Beryl
 - **Sección "Internet Detector — WAN Monitoring" reescrita** (estaba desactualizada desde 2026-04-15): instancias reales son `wan`=Megacable/`eth1` y `secondwan`=Telmex/`pppoe-secondwan` (post-swap 07-07), no "internet"/"secondwan" con `lan1`. `mod_public_ip` está de vuelta en `1` (regresión aceptada por el usuario, ver [[mod_public_ip_regression_20260802]] — no re-proponer apagarlo).
