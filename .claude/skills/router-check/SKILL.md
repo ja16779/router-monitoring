@@ -70,12 +70,14 @@ Si en el futuro se actualiza `paramiko` y se quiere reintentar, verificar primer
     - **Persistencia**: Agregado a sysupgrade.conf para preservar post-upgrade
     - **Status**: ✅ PRODUCTIVO — ambos eventos (CONNECT + DISCONNECT) capturados
 16. **banIP**: `status: active`, `active_devices` debe cubrir AMBAS WANs (`eth1` + `pppoe-secondwan`), chains nft (`nft list table inet banIP | grep iifname`) sin ninguna interfaz activa faltante, contadores (`cnt_ctinvalid`, `cnt_udpflood`, etc.) > 0 y creciendo — ver sección "banIP — Cobertura Dual-WAN y validación detrás de NAT" más abajo para contexto completo (no instalado en Beryl, correcto)
+17. **Dead man's switch (healthchecks.io)**: check "Flint-2" en `status: up` (`/usr/bin/monitor/healthcheck_ping.sh`, cron `*/5`) — ver sección "Dead Man's Switch — healthchecks.io" más abajo
 
 ### Beryl
 1. **Servicios**: dnsmasq, dropbear, wifi
 2. **Uptime y RAM**
 3. **Conectividad**: ping a 192.168.10.1
-4. **WiFi Hotplug Tracker**: Sistema event-driven identical a Flint-2
+4. **Dead man's switch (healthchecks.io)**: check "Beryl" en `status: up` (`/usr/bin/monitor/healthcheck_ping.sh`, cron `*/5`, nuevo 2026-09-08) — ver sección "Dead Man's Switch — healthchecks.io"
+5. **WiFi Hotplug Tracker**: Sistema event-driven identical a Flint-2
     - **Procesos**: 4 instancias de `hostapd_cli -a /etc/hotplug.d/wifi/50-client-tracker` (phy0-ap0, phy1-ap0, wlan0-1, wlan1-1 — phy0-ap2/AXTEL XTREMO 2.4GHz deshabilitada desde 2026-04-24, `wireless.wifinet4.disabled='1'`, confirmado 2026-08-14)
     - **Interfaces**: 4 APs activos (2.4GHz: phy0-ap0, wlan0-1 | 5GHz: phy1-ap0, wlan1-1)
     - **SSIDs monitoreadas**: 4 únicas (Mega_2.4G_A2DF, AXTEL XTREMO — solo 5GHz, IOT, Mega_5G_A2DF)
@@ -202,6 +204,16 @@ for s in dnsmasq dropbear; do
   echo -n "$s: "; pidof $s > /dev/null 2>&1 && echo "running" || echo "STOPPED"
 done
 ping -c 2 -W 2 192.168.10.1 > /dev/null 2>&1 && echo "Gateway: OK" || echo "Gateway: UNREACHABLE"
+
+# Dead man's switch healthchecks.io (check "Beryl", nuevo 2026-09-08)
+crontab -l | grep -q "healthcheck_ping.sh" && echo "healthcheck cron: OK" || echo "healthcheck cron: MISSING"
+logread | grep "healthcheck: Ping OK" | tail -1
+```
+
+Estado del check "Beryl" en healthchecks.io (desde la laptop, API key de solo lectura — ver [[healthchecks_io_api_key.md]]):
+```sh
+curl -s -H "X-Api-Key: hcr_3Oz82QavmgU5H3aHMrnPT1LRD07r" "https://healthchecks.io/api/v3/checks/" \
+  | python3 -c "import sys,json; [print(c['name'], c['status']) for c in json.load(sys.stdin)['checks']]"
 ```
 
 ## Alert Thresholds
@@ -1445,38 +1457,84 @@ Script en `/usr/bin/monitor/mwan3_recovery_watchdog.sh`, cron `*/2 * * * *` en F
 
 ---
 
-## Internet Detector — WAN Monitoring (actualizado 2026-04-15)
+## Internet Detector — WAN Monitoring (actualizado 2026-09-08)
 
 ### Estado
-✅ **OPERATIVO** — Monitorea conectividad de ambas WANs
+✅ **OPERATIVO** — Solo Flint-2. 2 instancias, una por WAN. `mode='1'`, `enable_logger='1'`.
 
-### Configuración
-- **Instancia 1 (internet)**: Telmex WAN — eth1 (pppoe-wan)
-  - Ping a: 45.90.28.0, 45.90.30.0 (NextDNS bootstrap)
-  - **Módulo mod_public_ip**: ❌ **DESACTIVADO** (2026-04-15 — causaba falsas desconexiones)
-  
-- **Instancia 2 (secondwan)**: Megacable WAN — lan1
-  - Misma configuración de ping
-  - **Módulo mod_public_ip**: ❌ **DESACTIVADO**
+### Configuración actual (post-swap de WANs 2026-07-07)
+| Instancia | WAN | `iface` | `mod_telegram_host_alias` | Ping a |
+|---|---|---|---|---|
+| `wan` | Megacable | `eth1` | 🔵 Megacable | 45.90.28.245, 45.90.30.245 |
+| `secondwan` | Telmex | `pppoe-secondwan` | 🟢 Telmex | 45.90.30.245, 45.90.28.245 |
 
-### Cambio Reciente
-**2026-04-15**: Desactivación de `mod_public_ip_enabled` en ambas instancias
-- **Problema**: Módulo intentaba obtener IP pública vía HTTP (checkip.amazonaws.com) que fallaba intermitentemente
-- **Síntoma**: Falsas alertas de "Disconnected/Connected" cada 10-30 minutos
-- **Solución**: Desactivar módulo, confiar solo en ping (verificado con MWAN3 que WANs estaban online 21+ horas)
-- **Resultado**: ✅ Cero falsos positivos, alertas solo en desconexiones reales
+- Telegram: bot `Flint2_bot`, chat `716542586`. `mod_telegram_message_at_startup='1'` → cada restart del servicio re-manda el estado actual de ambas WANs (2 mensajes, normal, no es bug).
+- `mod_public_ip_enabled='1'` en ambas — se reactivó solo (regresión del apagado del 2026-04-15). El usuario decidió **no revertirlo** en Flint-2 (ver [[mod_public_ip_regression_20260802]] en memoria). Log muestra `mod_public_ip: UDP error` ocasional, sin impacto observado. No re-proponer apagarlo.
+
+### ⚠️ Bug corregido 2026-09-08: `mod_telegram_iface` bindeaba el envío a la interfaz caída
+`internet-detector.secondwan.mod_telegram_iface='pppoe-secondwan'` hacía que `mod_telegram.lua` (líneas 89-90) armara `curl --interface pppoe-secondwan https://api.telegram.org/...` — o sea intentaba mandar la alerta de "Telmex cayó" **saliendo por la interfaz de Telmex**, que ya no existe con el PPPoE caído → `curl` exit 45 → `mod_telegram: An error occured while sending message` (×3 reintentos). La detección (`secondwan: Disconnected`) sí funcionaba; solo el envío fallaba. La instancia `wan` tenía el mismo defecto latente (`mod_telegram_iface='eth1'`).
+
+**Fix**: quitar el bind en ambas instancias para que `curl` use la tabla de rutas (mwan3 lo saca por la WAN viva, igual que el `send_telegram()` de `/etc/monitor/config.sh` que nunca tuvo el problema):
+```sh
+uci delete internet-detector.wan.mod_telegram_iface
+uci delete internet-detector.secondwan.mod_telegram_iface
+uci commit internet-detector
+/etc/init.d/internet-detector restart
+```
+Verificado: post-restart ambas instancias mandan `mod_telegram: Message sent to chat 716542586`. `grep -c mod_telegram_iface /etc/config/internet-detector` = 0.
+
+**Persistencia**: `/etc/config/internet-detector` agregado explícitamente a `/etc/sysupgrade.conf` de Flint-2 el 2026-09-08 (antes solo estaba `/etc/internet-detector`, el dir de scripts). Beryl no tiene internet-detector instalado (correcto, es solo AP).
 
 ### Verificación
 ```bash
-# Ver estado del internet-detector
-ssh root@192.168.10.1 "ps | grep internet-detector | grep -v grep"
+# Ver estado del internet-detector (2 procesos lua: -i wan, -i secondwan)
+ssh root@192.168.10.1 "ps w | grep 'internet-detector -a' | grep -v grep"
 
-# Ver logs (últimas líneas sin errores de HTTP)
-ssh root@192.168.10.1 "logread | grep internet-detector | tail -5"
+# Ver logs recientes — no debe haber 'An error occured while sending message'
+ssh root@192.168.10.1 "logread | grep -i internet-detector | tail -10"
 
-# Confirmar mod_public_ip desactivado
-ssh root@192.168.10.1 "grep 'mod_public_ip_enabled' /etc/config/internet-detector"
-# Debería mostrar: '0' en ambas instancias
+# Confirmar que NO hay bind de interfaz en Telegram (bug del 2026-09-08)
+ssh root@192.168.10.1 "grep -c mod_telegram_iface /etc/config/internet-detector"
+# Debe ser: 0
+
+# Prueba real de envío sin bind (debe devolver JSON ok:true)
+ssh root@192.168.10.1 'T=$(uci -q get internet-detector.wan.mod_telegram_api_token); curl -s -m 10 "https://api.telegram.org/bot$T/getMe"'
+```
+
+---
+
+## Dead Man's Switch — healthchecks.io (actualizado 2026-09-08)
+
+### Estado
+✅ **2 checks separados**, plan libre (máx 20). Ver [[healthchecks_io_api_key.md]] en memoria para UUIDs y API key de solo lectura.
+
+| Check | Router | Ping UUID | Script / cron | Period / Grace |
+|---|---|---|---|---|
+| "Flint-2" (antes "My First Check") | Flint-2 | `a940a85a-a13c-4518-a34b-7daf19455307` | `/usr/bin/monitor/healthcheck_ping.sh` — cron `*/5 * * * *` (+ `master_realtime.sh` `run_if_interval "healthcheck" 300`) | 10 min / 5 min |
+| "Beryl" | Beryl | `22d0caeb-c056-4f5e-8fce-2c0f7e8b1c60` | `/usr/bin/monitor/healthcheck_ping.sh` — cron `*/5 * * * *` (nuevo 2026-09-08) | 10 min / 5 min |
+
+El script hace `curl` a 1.1.1.1/8.8.8.8 primero; si no hay internet hace `exit 0` (no pinga) y deja que el switch se dispare solo. Persistencia: en ambos routers `/usr/bin/monitor/` y `/etc/crontabs/root` ya están en `sysupgrade.conf` — no hace falta línea nueva.
+
+### Por qué 2 checks y no 1
+Beryl no tiene WAN propia (ruta 100% vía Flint-2). Con checks separados, cruzando el estado de ambos se distingue el tipo de falla:
+
+| "Flint-2" | "Beryl" | Significado |
+|---|---|---|
+| down | down | Corte real de internet (ambas WANs abajo) |
+| **up** | **down** | Problema propio de Beryl (colgado, reinició, perdió el enlace con Flint-2) |
+
+⚠️ Contra: durante un corte real de ambas WANs, el check de Beryl también cae → doble notificación. El valor está en el historial de duración y en distinguir fallas propias de Beryl (que `beryl_monitor.sh` ya alerta por Telegram, pero sin historial ni duración acumulada).
+
+### Verificación
+```bash
+# Estado de ambos checks (API key de solo lectura, ver memoria)
+curl -s -H "X-Api-Key: hcr_3Oz82QavmgU5H3aHMrnPT1LRD07r" "https://healthchecks.io/api/v3/checks/" \
+  | python3 -c "import sys,json; [print(c['name'], c['status'], 'last:', c.get('last_ping')) for c in json.load(sys.stdin)['checks']]"
+
+# Ejecutar manualmente en cualquiera de los dos
+ssh root@192.168.10.1 /usr/bin/monitor/healthcheck_ping.sh   # Flint-2
+sshpass -p admin ssh ... root@192.168.10.2 /usr/bin/monitor/healthcheck_ping.sh   # Beryl
+# Log: logread | grep healthcheck  → "Ping OK"
 ```
 
 ---
@@ -1935,6 +1993,13 @@ nft list counters inet banIP
 ---
 
 ## Changelog
+
+### v1.30.0 (2026-09-08) — internet-detector: bug de envío a Telegram + dead man's switch en Beryl
+- **Sección "Internet Detector — WAN Monitoring" reescrita** (estaba desactualizada desde 2026-04-15): instancias reales son `wan`=Megacable/`eth1` y `secondwan`=Telmex/`pppoe-secondwan` (post-swap 07-07), no "internet"/"secondwan" con `lan1`. `mod_public_ip` está de vuelta en `1` (regresión aceptada por el usuario, ver [[mod_public_ip_regression_20260802]] — no re-proponer apagarlo).
+- **Bug corregido: `mod_telegram_iface`**. Las 2 instancias tenían `mod_telegram_iface` apuntando a su propia WAN → `mod_telegram.lua` armaba `curl --interface <wan-caída>` → cuando Telmex cayó (2026-09-08), la alerta de "secondwan Disconnected" falló 3 veces (`curl` exit 45) y nunca llegó a Telegram. La detección sí funcionaba. Fix: `uci delete internet-detector.{wan,secondwan}.mod_telegram_iface` + restart → `curl` usa la tabla de rutas y sale por la WAN viva. Verificado.
+- **`/etc/config/internet-detector` agregado a `sysupgrade.conf` de Flint-2** (antes solo estaba `/etc/internet-detector`, el dir de scripts).
+- **Nueva sección "Dead Man's Switch — healthchecks.io"**: documenta los 2 checks separados ("Flint-2" preexistente + "Beryl" nuevo 2026-09-08). Beryl ahora corre `/usr/bin/monitor/healthcheck_ping.sh` (cron `*/5`, mismo patrón que Flint-2, UUID propio `22d0caeb…`). Cruzando ambos checks se distingue corte real de WANs (ambos down) vs. falla propia de Beryl (Flint-2 up + Beryl down). Ver [[healthchecks_io_api_key.md]] en memoria para UUIDs/API key.
+- **Chequeo de rutina**: agregado ítem 17 a Flint-2 y ítem 4 a Beryl (estado `up` del check de healthchecks.io correspondiente).
 
 ### v1.29.0 (2026-08-22) — Corrección residual: conteo hostapd_cli seguía en 5 en dos lugares
 - El fix de v1.25.0 (5→4 procesos hostapd_cli, tras deshabilitar AXTEL_XTREMO 2.4GHz) no se aplicó completo: el bloque principal "Commands to Run on Flint-2" (chequeo de WiFi Hotplug Tracker) y la sección de verificación de Flint-2 en "WiFi Hotplug Tracker" seguían esperando 5, pese a que el changelog decía "corregido en ambos routers". Detectado al agregar el chequeo de banIP a este mismo archivo. Corregido a 4 en ambos puntos.
