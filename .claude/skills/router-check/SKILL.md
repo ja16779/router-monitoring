@@ -1368,30 +1368,76 @@ ls -lh /mnt/usb/config-sync/ | head -20
 
 ---
 
-## Telegram Notifications
+## Telegram Notifications (auditoría completa 2026-08-23)
 
-**Sistema centralizado de notificaciones en grupo con prefijos temáticos:**
+**Arquitectura real:**
+- 2 bots: `Flint2_bot` (Flint-2 + la mayoría de scripts de Beryl que leen el `/etc/monitor/config.sh` compartido) y `mr8300bot` (propio de Beryl, usado solo por el WiFi Hotplug Tracker).
+- **Chat destino: chat privado `716542586`** (Jose) — migrado desde el grupo "Flint2 notifications" (`-1003951418154`) el 2026-08-03. El grupo viejo ya no se usa en ningún código activo.
+- Hub compartido: `/etc/monitor/config.sh` (Flint-2 tiene además un segundo hub duplicado en `/usr/bin/monitor/config.sh`; Beryl no centraliza `send_telegram()` — cada script trae su propia copia de la función, pero lee `TELEGRAM_CHAT_ID`/`TELEGRAM_BOT_TOKEN` del config.sh compartido).
+- ⚠️ **La tabla de prefijos `[MWAN3]`/`[BACKUP]`/`[HEALTH]`/`[SYSTEM]`/`[WIFI]` de versiones anteriores de este skill quedó obsoleta** — no refleja ningún sistema real en uso hoy, se eliminó de esta doc.
 
-- **Grupo**: "Flint2 notifications" (ID: -1003951418154)
-- **Chat ID**: `-1003951418154`
-- **Función**: `send_telegram(mensaje, prefijo)` en `/etc/monitor/config.sh`
+Se auditaron los ~100 scripts que en algún momento tuvieron código de Telegram en ambos routers, cruzando crontab + `master_*.sh` para saber qué corre realmente y con qué condición dispara el envío. Resultado: 4 categorías.
 
-### Prefijos por Tema
+### 1. ALERTA condicional (MANTENER — solo disparan ante falla/umbral real)
+Volumen esperado: ~0-1 mensajes/día en operación normal.
 
-| Prefijo | Scripts | Hora | Descripción |
-|---------|---------|------|-------------|
-| `[MWAN3]` | failover_notify.sh, mwan3_test.sh | Tiempo real + 02:00 | WAN cambios, latencias, downtime |
-| `[BACKUP]` | backup_new.sh, config_sync.sh | 03:00, 02:00 | Backups y sincronización USB |
-| `[HEALTH]` | mac_report.sh | 02:00 | Nuevos dispositivos MAC, estado |
-| `[SYSTEM]` | reporte_diario.sh, log_cleaner.sh | 02:00 | Uptime, RAM, CPU, Servicios |
-| `[WIFI]` | wifi_report.sh | 08:00 | Clientes por SSID, estadísticas |
+| Script | Router | Dispara cuando... |
+|---|---|---|
+| temp_alert.sh | ambos | temperatura CPU sobre umbral |
+| adguard_health.sh | Flint-2 | AdGuardHome caído/no responde |
+| beryl_monitor.sh | Flint-2 | Beryl no responde a health check |
+| health_check.sh | Beryl | chequeo general falla |
+| overlay_check.sh | ambos | espacio en overlay casi lleno |
+| dhcp_pool_monitor.sh | Flint-2 | pool DHCP cerca de agotarse |
+| tailscale_monitor.sh | Flint-2 | Tailscale caído |
+| wifi_tainted_notify.sh | ambos | proceso WiFi colgado detectado y limpiado |
+| public_ip_monitor.sh | Flint-2 | IP pública cambió |
+| memory_monitor.sh | Flint-2 | RAM crítica |
+| firmware_check.sh | ambos | nueva versión de firmware disponible |
+| agh_update_check.sh | Flint-2 | nueva versión de AdGuardHome disponible |
+| wifi_channel_monitor.sh | ambos | canal WiFi cambiado automáticamente |
+| monitor_internet.sh / failover_notify.sh | Flint-2 | WAN cae o se recupera |
+| mwan3_recovery_watchdog.sh | Flint-2 | recuperación de WAN perdida por failover_notify (ver detalle abajo) |
+| backup_verify.sh | Flint-2 | verificación semanal de backup falla |
+| backup_beryl_pull.sh | Flint-2 | solo si el pull de Beryl falla |
+| rps_rfs_monitor.sh | Flint-2 | RPS/RFS se regresó a default (autocorrección) |
 
-### Notificaciones en Tiempo Real
+### 2. EVENTO único (MANTENER — algo pasó una vez)
+Volumen esperado: ~1-6 mensajes/día combinados.
 
-- **failover_notify.sh**: WAN cambios (online/offline) con duración de downtime
-  - Ejemplo: `[MWAN3] 🟢 WAN Axtel volvió ONLINE | Duración: 5m 23s`
-- **backup_new.sh**: Éxito/fallo de backups
-  - Ejemplo: `[BACKUP] ✅ BACKUP COMPLETADO | 247MB`
+| Script | Router | Evento |
+|---|---|---|
+| boot_notify.sh | ambos | arrancó el router |
+| reboot_notify.sh / scheduled_reboot.sh | Flint-2 | reinicio (scheduled_reboot es mensual) |
+| wifi_reload_notify.sh | Beryl | wifi reload 4x/día (00,06,12,18h) — evento fijo, no anomalía |
+| family_presence.sh | Flint-2 | familiar llega/sale (dedup por estado) |
+| pkg_updater.sh upgrade | ambos | solo si hubo paquetes actualizados (domingo 6am) |
+| wifi_roaming_monitor.sh | Flint-2 | cliente cambió de router (roaming real, ver nota abajo) |
+
+**Nota sobre roaming/conexión de clientes**: el único canal de "movimiento de clientes" es `wifi_roaming_monitor.sh` (Flint-2, HTML+hostname). El connect/disconnect individual del WiFi Hotplug Tracker (`/etc/hotplug.d/wifi/50-client-tracker`) está desactivado a propósito en ambos routers (`return 0` antes del `curl`) desde 2026-08-03 — el flapping de dispositivos IoT saturaba el chat. **No reactivar sin que el usuario lo pida.**
+
+### 3. REPORTE rutinario — SILENCIADO 2026-08-23 (antes ~6-9 mensajes/día sin acción requerida)
+A petición del usuario se comentó (no se borró) el envío a Telegram de estos reportes puramente informativos. El script/función sigue corriendo normal (limpieza de logs, generación del reporte, backup, sync) — solo el `curl`/`send_telegram()` final quedó deshabilitado. **Reactivar** = borrar la línea marcada `# SILENCIADO 2026-08-23` (o el bloque `: <<'TELEGRAM_SILENCIADO' ... TELEGRAM_SILENCIADO`) en el archivo indicado. Hay backup del original en el mismo router con sufijo `.bak-20260823-telegram-silence`.
+
+| Script | Router | Método de silencio | Frecuencia original |
+|---|---|---|---|
+| mac_report.sh | Flint-2 | bloque `curl` envuelto en heredoc-comentario | diario 02:02 (master_daily) |
+| wifi_report.sh --report | ambos | `return 0` antes del `curl` en `send_report()` | Flint-2 diario 02:02; Beryl diario 20:00 |
+| log_cleaner.sh | Flint-2 | `return 0` al inicio de `send_telegram()` | diario 02:02 |
+| leases_report.sh | Beryl | `return 0` al inicio de `send_telegram()` | diario 20:00 |
+| wifi_clients_report.sh | Beryl | `return 0` al inicio de `send_telegram()` | diario 20:00 |
+| backup_new.sh | Flint-2 | solo el mensaje de **éxito** (heredoc-comentario); el de **FALLO** sigue activo | diario 02:02 |
+| rsync_sysupgrade_sync.sh | Flint-2 | solo el mensaje de **éxito** (heredoc-comentario); el de **FAILED** sigue activo | cada 6h si hubo cambios |
+
+### 4. Código muerto / huérfano — NO enganchado a ningún cron activo
+Contienen código de Telegram pero no corren hoy (no están en ningún crontab ni los llama ningún `master_*.sh`). No necesitan silencio porque ya no mandan nada — se documentan aquí para que nadie los "redescubra" asumiendo que están activos.
+
+- **Flint-2**: `banip_alert.sh`, `banip_alerts.sh`, `banip_stats.sh`, `banip_telegram_alert.sh` (el `banip_monitor.sh` real, que sí corre cada 6min, solo escribe a log — nunca llamó Telegram), `isp_tracker.sh notify` (el script solo se invoca en modo `collect`; el modo `notify` nunca se llama), `update_adguardhome.sh`, `upgrade_paquetes.sh`, `wifi_analyzer.sh`, `wan_quality_report.sh`, `unbound_monitor.sh`, `roaming_monitor.sh` (depende de `/tmp/usteer_clients.new` y usteer está desinstalado), `reporte_diario.sh` (⚠️ este skill lo documentaba antes con prefijo `[SYSTEM]` — ya no tiene ninguna línea de Telegram, corrección de esta doc), `/etc/script/{adguard,cola,firmware,mega,megaperf,luci,pkg_manager,check_firmware,speedtest,telmexperf}.sh`, `/etc/script/{96-notify,97-client,98-client-join-notification,99-notify}` (confirmado muerto desde la migración del 2026-08-03).
+- **Beryl**: `pre_sysupgrade.sh`, `upgrade_paquetes.sh`, `wifi_intrusion_detector.sh`, `backup_beryl.sh`.
+- Ya desactivados a propósito (decisión previa del usuario, no re-proponer reactivar): connect/disconnect individual del WiFi Hotplug Tracker, `new_device_alert.sh`, `connectivity_watchdog.sh` (comentado en `master_realtime.sh`).
+
+### Bug conocido, no corregido
+`usb_monitor.sh` (Flint-2): el aviso de "USB no montado" no tiene dedup por state-file (a diferencia del bloque de "casi lleno", que sí lo tiene) — si el USB se desconecta, repetiría el mensaje cada 30 min indefinidamente. Pendiente de arreglar si se vuelve a presentar.
 
 ### mwan3_recovery_watchdog.sh (nuevo, encontrado 2026-08-10 — sin fecha de instalación conocida)
 
